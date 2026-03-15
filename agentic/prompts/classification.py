@@ -6,16 +6,16 @@ Determines both the attack methodology AND the required phase (informational/exp
 Dynamically includes only ENABLED skills in the classification prompt.
 """
 
-from project_settings import get_enabled_builtin_skills, get_enabled_user_skills
+from project_settings import get_enabled_builtin_skills, get_enabled_user_skills, get_setting
 
 
 # =============================================================================
 # BUILT-IN SKILL SECTIONS (included when the skill is enabled)
 # =============================================================================
 
-_CVE_EXPLOIT_SECTION = """### cve_exploit
-- Exploit known CVE vulnerabilities directly against a service using Metasploit modules
-- Keywords: CVE-XXXX, exploit, RCE, vulnerability, pwn, hack
+_CVE_EXPLOIT_SECTION = """### cve_exploit — CVE (MSF)
+- Exploit known CVE vulnerabilities directly against a service using Metasploit Framework (MSF) modules
+- Keywords: CVE-XXXX, exploit, RCE, vulnerability, pwn, hack, metasploit
 """
 
 _BRUTE_FORCE_SECTION = """### brute_force_credential_guess
@@ -30,6 +30,13 @@ _PHISHING_SECTION = """### phishing_social_engineering
 - Keywords: payload, reverse shell, msfvenom, backdoor, phishing, malicious document, handler
 """
 
+_DOS_SECTION = """### denial_of_service
+- Attacks that DISRUPT service availability rather than gaining access or stealing data
+- Includes: DoS modules, flooding, slowloris, resource exhaustion, crash exploits
+- Key distinction: goal is DISRUPTION/CRASH/UNAVAILABILITY — no shell, no credentials, no data theft
+- Keywords: dos, denial of service, crash, disrupt, availability, slowloris, flood, exhaust, stress test, take down, knock offline, overwhelm
+"""
+
 _UNCLASSIFIED_SECTION = """### <descriptive_term>-unclassified
 - ANY exploitation request that does NOT clearly fit the enabled attack skills above
 - The agent has no specialized workflow for these — it will use available tools generically
@@ -38,8 +45,8 @@ _UNCLASSIFIED_SECTION = """### <descriptive_term>-unclassified
   - "Generate a reverse shell payload" → phishing (attacker creates a file for a victim to execute)
 - You MUST create a short, descriptive snake_case term followed by "-unclassified"
 - Format: `<term>-unclassified` where term is 1-4 lowercase words joined by underscores
-- Example values: "sql_injection-unclassified", "dos_attack-unclassified", "ssrf-unclassified", "xss-unclassified", "file_upload-unclassified", "directory_traversal-unclassified"
-- Keywords: SQL injection, XSS, cross-site scripting, directory traversal, path traversal, DoS, denial of service, SSRF, file upload, command injection, LFI, RFI, deserialization, XXE, privilege escalation
+- Example values: "sql_injection-unclassified", "ssrf-unclassified", "xss-unclassified", "file_upload-unclassified", "directory_traversal-unclassified"
+- Keywords: SQL injection, XSS, cross-site scripting, directory traversal, path traversal, SSRF, file upload, command injection, LFI, RFI, deserialization, XXE, privilege escalation
 - Example requests:
   - "Try SQL injection on the web app" -> "sql_injection-unclassified"
   - "Test for SSRF on the API" -> "ssrf-unclassified"
@@ -54,6 +61,7 @@ _BUILTIN_SKILL_MAP = {
     'phishing_social_engineering': (_PHISHING_SECTION, 'a', 'phishing_social_engineering'),
     'brute_force_credential_guess': (_BRUTE_FORCE_SECTION, 'b', 'brute_force_credential_guess'),
     'cve_exploit': (_CVE_EXPLOIT_SECTION, 'c', 'cve_exploit'),
+    'denial_of_service': (_DOS_SECTION, 'd', 'denial_of_service'),
 }
 
 # Priority order for built-in classification instructions
@@ -72,6 +80,11 @@ _PRIORITY_INSTRUCTIONS = {
       - Does the request mention a specific CVE ID or Metasploit exploit module to use DIRECTLY against a service?
       - Does it describe exploiting a service vulnerability where NO human victim interaction is needed?
       - If YES → "cve_exploit" """,
+    'denial_of_service': """   {letter}. **denial_of_service**:
+      - Is the goal to DISRUPT, CRASH, or make a service UNAVAILABLE (not to gain access)?
+      - Does it mention DoS, denial of service, flooding, slowloris, stress test, take down, exhaust resources?
+      - Is the user NOT trying to get a shell, steal data, or obtain credentials?
+      - If YES → "denial_of_service" """,
 }
 
 
@@ -82,6 +95,15 @@ def build_classification_prompt(objective: str) -> str:
     """
     enabled_builtins = get_enabled_builtin_skills()
     enabled_user_skills = get_enabled_user_skills()
+
+    # RoE enforcement: exclude skills from classification when RoE prohibits them
+    if get_setting('ROE_ENABLED', False):
+        if not get_setting('ROE_ALLOW_DOS', False):
+            enabled_builtins.discard('denial_of_service')
+        if not get_setting('ROE_ALLOW_ACCOUNT_LOCKOUT', False):
+            enabled_builtins.discard('brute_force_credential_guess')
+        if not get_setting('ROE_ALLOW_SOCIAL_ENGINEERING', False):
+            enabled_builtins.discard('phishing_social_engineering')
 
     # --- Header ---
     parts = [
@@ -126,7 +148,7 @@ def build_classification_prompt(objective: str) -> str:
     parts.append("## Attack Skill Types (ONLY for exploitation phase)\n")
 
     # Built-in skills (only enabled ones)
-    for skill_id in ['phishing_social_engineering', 'brute_force_credential_guess', 'cve_exploit']:
+    for skill_id in ['phishing_social_engineering', 'brute_force_credential_guess', 'cve_exploit', 'denial_of_service']:
         if skill_id in enabled_builtins:
             section_text, _, _ = _BUILTIN_SKILL_MAP[skill_id]
             parts.append(section_text)
@@ -156,7 +178,7 @@ def build_classification_prompt(objective: str) -> str:
 
     # Build priority list dynamically
     letter = ord('a')
-    priority_order = ['phishing_social_engineering', 'brute_force_credential_guess', 'cve_exploit']
+    priority_order = ['phishing_social_engineering', 'brute_force_credential_guess', 'cve_exploit', 'denial_of_service']
     for skill_id in priority_order:
         if skill_id in enabled_builtins:
             instruction = _PRIORITY_INSTRUCTIONS[skill_id].format(letter=chr(letter))

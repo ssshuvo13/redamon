@@ -115,6 +115,13 @@ def build_attack_path_behavior(attack_path_type):
             "In informational phase: Gather target info (IP, port, service version, CVE details), "
             "then request transition to exploitation phase."
         )
+    elif attack_path_type == "denial_of_service":
+        return (
+            "In informational phase: Gather target service info (version, OS), research known DoS "
+            "vulnerabilities for the service, then request transition to exploitation.\n"
+            "In exploitation: Follow the DoS workflow — execute attack, verify impact, "
+            "then action='complete'. NEVER request post_exploitation — DoS does not provide access."
+        )
     elif attack_path_type.startswith("user_skill:"):
         return (
             "Follow the attack skill workflow guidance provided in the Available Tools section.\n"
@@ -582,13 +589,14 @@ When `exploit_succeeded` is true, include `exploit_details`:
 
 ### Chain Findings
 
-Include `chain_findings` when the output reveals notable intelligence: confirmed vulns, found credentials, discovered services, exploit modules, or defense detection.
+Include `chain_findings` when the output reveals notable intelligence: confirmed vulns, found credentials, discovered services, exploit modules, defense detection, or successful attack outcomes.
 Always emit `service_identified` findings when new ports/services are discovered, and `configuration_found` when new technologies are identified.
+Use goal/outcome types when an attack objective is achieved: exploit_success, access_gained, privilege_escalation, data_exfiltration, lateral_movement, persistence_established, denial_of_service_success, social_engineering_success, remote_code_execution, session_hijacked.
 
 ```json
 "chain_findings": [
   {{
-    "finding_type": "<vulnerability_confirmed|credential_found|exploit_success|access_gained|privilege_escalation|service_identified|exploit_module_found|defense_detected|configuration_found|custom>",
+    "finding_type": "<vulnerability_confirmed|credential_found|exploit_success|access_gained|privilege_escalation|service_identified|exploit_module_found|defense_detected|configuration_found|information_disclosure|data_exfiltration|lateral_movement|persistence_established|denial_of_service_success|social_engineering_success|remote_code_execution|session_hijacked|custom>",
     "severity": "<critical|high|medium|low|info>",
     "title": "Short finding description",
     "evidence": "Raw evidence excerpt from output",
@@ -634,7 +642,7 @@ Your `output_analysis` should cover ALL tool outputs holistically. Use this EXAC
     "exploit_details": null,
     "chain_findings": [
       {{
-        "finding_type": "<vulnerability_confirmed|credential_found|service_identified|configuration_found|custom>",
+        "finding_type": "<vulnerability_confirmed|credential_found|exploit_success|access_gained|privilege_escalation|service_identified|exploit_module_found|defense_detected|configuration_found|information_disclosure|data_exfiltration|lateral_movement|persistence_established|denial_of_service_success|social_engineering_success|remote_code_execution|session_hijacked|custom>",
         "severity": "<critical|high|medium|low|info>",
         "title": "Short finding description",
         "evidence": "Raw evidence excerpt from output",
@@ -858,7 +866,7 @@ def determine_response_tier(
     has_sessions = bool(target_info.get("sessions"))
 
     # --- Phishing/SE always gets summary (report sections don't apply) ---
-    if attack_path_type == "phishing_social_engineering":
+    if attack_path_type in ("phishing_social_engineering", "denial_of_service"):
         return "summary"
 
     # --- Tier 1: Conversational ---
@@ -1070,7 +1078,7 @@ GVM-specific properties (source="gvm"):
 **ChainFinding** - Discovery during attack (replaces agent Exploit for exploit_success)
 - finding_id (string): Unique (UUID)
 - chain_id (string): parent AttackChain
-- finding_type (string): vulnerability_confirmed, credential_found, exploit_success, access_gained, privilege_escalation, service_identified, exploit_module_found, defense_detected, configuration_found, custom
+- finding_type (string): vulnerability_confirmed, credential_found, exploit_success, access_gained, privilege_escalation, service_identified, exploit_module_found, defense_detected, configuration_found, information_disclosure, data_exfiltration, lateral_movement, persistence_established, denial_of_service_success, social_engineering_success, remote_code_execution, session_hijacked, custom
 - severity (string): critical, high, medium, low, info
 - title (string): short description
 - description (string): detailed description

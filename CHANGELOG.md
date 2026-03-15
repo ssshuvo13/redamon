@@ -7,6 +7,48 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [3.0.0] - 2026-03-15
+
+### Added
+
+- **Denial of Service (DoS) Attack Skill** — new built-in attack skill for disrupting service availability. Includes LLM prompt templates for DoS vector selection, resource exhaustion, flooding, and crash exploits. Full integration across the stack:
+  - **Backend**: `denial_of_service_prompts.py` with DoS-specific workflow guidance, vector classification, and impact assessment prompts
+  - **Orchestrator**: DoS attack path type (`denial_of_service`) integrated into classification, phase transitions, and tool registry
+  - **Database**: Prisma schema updated with DoS configuration fields and project-level toggle
+  - **Frontend**: `DosSection.tsx` configuration component in the project form for enabling/disabling and tuning DoS parameters
+  - **API**: attack skills endpoint updated to expose DoS as a built-in skill
+
+- **Expanded Finding Types** — 8 new goal/outcome `finding_type` values for ChainFinding nodes, covering real-world pentesting outcomes beyond the original 10 types:
+  - `data_exfiltration` — data successfully stolen/exfiltrated
+  - `lateral_movement` — pivot to another system in the network
+  - `persistence_established` — backdoor, cron job, or persistent access installed
+  - `denial_of_service_success` — service confirmed down after DoS attack
+  - `social_engineering_success` — phishing or social engineering succeeded
+  - `remote_code_execution` — arbitrary code execution achieved
+  - `session_hijacked` — existing user session taken over
+  - `information_disclosure` — sensitive info leaked (source code, API keys, error messages)
+  - LLM prompts updated to guide the agent in emitting the correct goal type
+  - Analytics and report queries expanded to include all goal types
+
+- **Goal Finding Visualization** — ChainFinding diamond nodes on the attack surface graph now visually distinguish goal/outcome findings from informational ones:
+  - **Active chain**: goal diamonds are bright green (`#4ade80`), non-goal diamonds remain amber
+  - **Inactive chain**: goal diamonds are dark green (`#276d43`), non-goal diamonds are dark yellow (`#3d3107`), other chain nodes remain dark grey
+  - Inactive chain edges and particles darkened for better contrast
+  - Active chain particles brighter (`#9ca3af`) for clear visual distinction
+  - Applied consistently to both 2D and 3D graph renderers
+
+- **Animated Loading Indicator** — replaced static "Processing..." text in the AI assistant chat with a dynamic loading experience:
+  - **RedAmon eye logo** with randomized heartbeat animation (2–6s random intervals)
+  - **Color-shifting pupil** cycling through 13 bright colors (yellow, cyan, orange, purple, green, pink, etc.)
+  - **60 rotating hacker-themed phrases** displayed in random order every 5 seconds with fade-in animation (e.g., "Unmasking the hidden...", "Piercing the veil...", "Becoming root...")
+
+### Changed
+
+- Kali sandbox Dockerfile updated
+- Documentation and wiki updates
+
+---
+
 ## [2.3.0] - 2026-03-14
 
 ### Added
@@ -80,7 +122,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - **Graceful fallback**: empty `tool_plan` objects or plans with no steps are automatically downgraded to sequential `use_tool` execution
 
 - **Attack Skills System** — modular attack path management with built-in and user-uploaded skills:
-  - **Built-in Attack Skills** — three core skills (CVE Exploit, Brute Force, Phishing / Social Engineering) can now be individually enabled or disabled per project via toggles in the new Attack Skills section of Project Settings. Disabling a skill prevents the agent from classifying requests into that attack type and removes its prompts from the system prompt. Sub-settings (Hydra config, SMTP config) are shown inline when the corresponding skill is enabled
+  - **Built-in Attack Skills** — four core skills (CVE (MSF), Brute Force, Phishing / Social Engineering, Denial of Service) can now be individually enabled or disabled per project via toggles in the new Attack Skills section of Project Settings. Disabling a skill prevents the agent from classifying requests into that attack type and removes its prompts from the system prompt. Sub-settings (Hydra config, SMTP config, DoS parameters) are shown inline when the corresponding skill is enabled
   - **User Attack Skills** — upload custom `.md` files defining attack workflows from Global Settings. Each skill file contains a full workflow description that the agent follows across all three phases (informational, exploitation, post-exploitation). User skills are stored per-user in the database (`UserAttackSkill` model) and become available as toggles in all project settings
   - **Skill Management in Global Settings** — dedicated "Attack Skills" section with upload button (accepts `.md` files, max 50KB), skill list with download and delete actions, and a name-entry modal on upload
   - **Per-project skill toggles** — `attackSkillConfig` JSON field in the project stores `{ builtIn: { skill_id: bool }, user: { skill_id: bool } }` controlling which skills are active. Built-in skills default to enabled; user skills default to enabled when present
@@ -215,8 +257,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Agent prompts updated** — phishing, CVE exploit, and post-exploitation prompts now conditionally guide the agent based on which tunnel provider is active (ngrok limitations vs chisel capabilities)
 - **Recon: HTTP Probe DNS Fallback** — now probes common non-standard HTTP ports (8080, 8000, 8888, 3000, 5000, 9000) and HTTPS ports (8443, 4443, 9443) when falling back to DNS-only target building, improving coverage when naabu port scan results are empty
 - **Recon: Port Scanner SYN→CONNECT Retry** — when SYN scan completes but finds 0 open ports (firewall silently dropping SYN probes), automatically retries with CONNECT scan (full TCP handshake) which works through most firewalls
-- **Attack Paths Documentation** (`README.ATTACK_PATHS.md`) — comprehensive rewrite of Category 3 (Social Engineering / Phishing) with implementation details, 6-step workflow diagram, payload matrix, module reference, delivery methods, SMTP configuration guide, post-exploitation flow, and implementation file reference table
-- **Wiki and documentation** — updated AI Agent Guide, Project Settings Reference, Attack Paths guide, README, and README.ATTACK_PATHS.md with dual tunnel provider documentation
+- **Wiki and documentation** — updated AI Agent Guide, Project Settings Reference, Attack Paths guide, and README with dual tunnel provider documentation
 
 ### Fixed
 
@@ -293,7 +334,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **User Selector in Global Header** — switch between users directly from the top bar without navigating away, with two-letter avatar initials, dropdown user list, and "Manage Users" link
 - **OpenAI-Compatible Provider** — fifth AI provider supporting any OpenAI API-compatible endpoint (Ollama, LM Studio, vLLM, local proxies) via `OPENAI_COMPAT_BASE_URL` and `OPENAI_COMPAT_API_KEY` env vars, with `openai_compat/` prefix convention for model detection
 - **Hydra Brute Force Attack Path** — dedicated brute force attack path powered by THC Hydra, replacing Metasploit for credential-guessing operations with significantly higher performance. Supports 50+ protocols (SSH, FTP, RDP, SMB, MySQL, HTTP forms, and more) with configurable threads, timeouts, extra checks, and wordlist strategies. After credentials are discovered, the agent establishes access via `sshpass`, database clients, or protocol-specific tools
-- **Unclassified Attack Paths** — agent orchestrator now supports attack paths that don't fit the CVE Exploit or Hydra Brute Force categories, with dedicated prompts in `unclassified_prompts.py`
+- **Unclassified Attack Paths** — agent orchestrator now supports attack paths that don't fit the CVE (MSF) or Hydra Brute Force categories, with dedicated prompts in `unclassified_prompts.py`
 - **GitHub Wiki** — 13-page documentation wiki covering getting started, user management, project creation, graph dashboard, reconnaissance, GVM scanning, GitHub secret hunting, AI agent guide, project settings reference, AI model providers, attack surface graph, data export/import, and troubleshooting
 
 ### Changed
@@ -343,7 +384,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Prompt Token Optimization** — lazy no-module fallback injection (saves ~1.1K tokens), compact formatting for older execution trace steps (full output only for last 5), trimmed rarely-used wordlist tables
 - **Metasploit Prewarm** — pre-initializes Metasploit console on agent startup to reduce first-use latency
 - **Markdown Report Export** — download the full agent conversation as a formatted Markdown file
-- **Hydra Brute Force & CVE Exploit Settings** — new Project Settings sections for configuring Hydra brute force (threads, timeouts, extra checks, wordlist limits) and CVE exploit attack path parameters
+- **Hydra Brute Force & CVE (MSF) Settings** — new Project Settings sections for configuring Hydra brute force (threads, timeouts, extra checks, wordlist limits) and CVE exploit attack path parameters
 - **Node.js Deserialization Guinea Pig** — new test environment for CVE-2017-5941 (node-serialize RCE)
 - **Phase Tools Tooltip** — hover on phase badges to see which MCP tools are available in that phase
 - **GitHub Secrets Suggestion** — new suggestion button in AI Assistant to leverage discovered GitHub secrets during exploitation
@@ -411,7 +452,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - **Attack Path System** — agent now supports dynamic attack path selection with two built-in paths:
-  - **CVE Exploit** — automated Metasploit module search, payload configuration, and exploit execution
+  - **CVE (MSF)** — automated Metasploit module search, payload configuration, and exploit execution
   - **Hydra Brute Force** — THC Hydra-based credential guessing with configurable threads, timeouts, extra checks, and wordlist retry strategies
 - **Agent Guidance** — send real-time steering messages to the agent while it works, injected into the system prompt before the next reasoning step
 - **Agent Stop & Resume** — stop the agent at any point and resume from the last LangGraph checkpoint with full context preserved

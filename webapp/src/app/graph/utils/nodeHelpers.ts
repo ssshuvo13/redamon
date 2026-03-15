@@ -5,6 +5,8 @@ import {
   SEVERITY_COLORS_CVE,
   NODE_SIZES,
   SEVERITY_SIZE_MULTIPLIERS,
+  GOAL_FINDING_TYPES,
+  GOAL_FINDING_COLORS,
 } from '../config'
 
 /**
@@ -12,6 +14,15 @@ import {
  */
 export const getNodeSeverity = (node: GraphNode): string => {
   return (node.properties?.severity as string)?.toLowerCase() || 'unknown'
+}
+
+/**
+ * Check if a ChainFinding node represents a goal/outcome (exploit success, access gained, etc.)
+ */
+export const isGoalFinding = (node: GraphNode): boolean => {
+  if (node.type !== 'ChainFinding') return false
+  const findingType = (node.properties?.finding_type as string || '').toLowerCase()
+  return GOAL_FINDING_TYPES.has(findingType)
 }
 
 /**
@@ -25,6 +36,10 @@ export const getNodeColor = (node: GraphNode): string => {
   if (node.type === 'CVE') {
     const severity = getNodeSeverity(node)
     return SEVERITY_COLORS_CVE[severity] || SEVERITY_COLORS_CVE.unknown
+  }
+  // Goal ChainFindings get green (active color — canvas overrides for inactive)
+  if (isGoalFinding(node)) {
+    return GOAL_FINDING_COLORS.active
   }
   return NODE_COLORS[node.type] || NODE_COLORS.Default
 }

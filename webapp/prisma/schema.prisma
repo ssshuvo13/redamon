@@ -359,8 +359,14 @@ model Project {
   // ========== PHISHING / SOCIAL ENGINEERING SETTINGS ==========
   phishingSmtpConfig                    String   @default("") @map("phishing_smtp_config")
 
+  // ========== DENIAL OF SERVICE SETTINGS ==========
+  dosMaxDuration                        Int      @default(60) @map("dos_max_duration")
+  dosMaxAttempts                        Int      @default(3) @map("dos_max_attempts")
+  dosConcurrentConnections              Int      @default(1000) @map("dos_concurrent_connections")
+  dosAssessmentOnly                     Boolean  @default(false) @map("dos_assessment_only")
+
   // ========== ATTACK SKILL CONFIG ==========
-  attackSkillConfig                    Json     @default("{\"builtIn\":{\"cve_exploit\":true,\"brute_force_credential_guess\":true,\"phishing_social_engineering\":true},\"user\":{}}") @map("attack_skill_config")
+  attackSkillConfig                    Json     @default("{\"builtIn\":{\"cve_exploit\":true,\"brute_force_credential_guess\":true,\"phishing_social_engineering\":true,\"denial_of_service\":true},\"user\":{}}") @map("attack_skill_config")
 
   // ========== CYPHERFIX SETTINGS ==========
   cypherfixGithubToken              String   @default("") @map("cypherfix_github_token")

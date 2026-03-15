@@ -11,10 +11,11 @@ import {
   BACKGROUND_COLORS,
   SELECTION_COLORS,
   CHAIN_SESSION_COLORS,
+  GOAL_FINDING_COLORS,
   ANIMATION_CONFIG,
   THREE_CONFIG,
 } from '../../config'
-import { hasHighSeverityNodes } from '../../utils/nodeHelpers'
+import { hasHighSeverityNodes, isGoalFinding } from '../../utils/nodeHelpers'
 import { useAnimationFrame } from '../../hooks'
 
 const ForceGraph3D = dynamic(() => import('react-force-graph-3d'), {
@@ -90,7 +91,7 @@ export function GraphCanvas3D({
       linkWidth={(link) => getLinkWidth3D(link as GraphLink, selectedNodeId)}
       linkDirectionalParticles={(link) => getParticleCount(link as GraphLink, selectedNodeId)}
       linkDirectionalParticleWidth={(link) => getParticleWidth(link as GraphLink, selectedNodeId)}
-      linkDirectionalParticleColor={(link) => getParticleColor(link as GraphLink)}
+      linkDirectionalParticleColor={(link) => getParticleColor(link as GraphLink, activeChainId)}
       linkDirectionalParticleSpeed={(link) => getParticleSpeed(link as GraphLink)}
       linkDirectionalArrowLength={LINK_SIZES.arrowLength3D}
       linkDirectionalArrowRelPos={1}
@@ -133,10 +134,20 @@ export function GraphCanvas3D({
         const isInActiveChain = isChainNode && !!activeChainId && graphNode.properties?.chain_id === activeChainId
         const isExploitInActiveChain = isExploit && !!activeChainId && graphNode.properties?.chain_id === activeChainId
         const isActiveChain = graphNode.type === 'AttackChain' && isInActiveChain
-        // Inactive chain nodes: grey by default, orange when selected
-        const effectiveColor = (isChainNode || isExploit) && !isInActiveChain && !isExploitInActiveChain
-          ? (isSelected ? CHAIN_SESSION_COLORS.inactiveSelected : CHAIN_SESSION_COLORS.inactive)
-          : nodeColor
+        const isGoal = isGoalFinding(graphNode)
+        // Inactive chain nodes: grey (dark yellow for diamonds, dark green for goal findings)
+        let effectiveColor: string
+        if ((isChainNode || isExploit) && !isInActiveChain && !isExploitInActiveChain) {
+          if (isGoal) {
+            effectiveColor = isSelected ? GOAL_FINDING_COLORS.active : GOAL_FINDING_COLORS.inactive
+          } else if (isExploit) {
+            effectiveColor = isSelected ? CHAIN_SESSION_COLORS.inactiveSelected : CHAIN_SESSION_COLORS.inactiveFinding
+          } else {
+            effectiveColor = isSelected ? CHAIN_SESSION_COLORS.inactiveSelected : CHAIN_SESSION_COLORS.inactive
+          }
+        } else {
+          effectiveColor = nodeColor
+        }
 
         // Add active-session marker ring (yellow, dashed) on matching AttackChain
         if (isActiveChain) {

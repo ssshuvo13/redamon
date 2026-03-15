@@ -915,7 +915,7 @@ All deep-dive documentation lives in the `readmes/` folder alongside this file.
 |----------|----------------|
 | [README.PENTEST_AGENT.md](README.PENTEST_AGENT.md) | Full pentest agent architecture: ReAct loop, LangGraph state machine, WebSocket protocol, tool specs, multi-objective support, RoE guardrails, EvoGraph attack chains, prompt token optimization |
 | [README.CYPHERFIX_AGENTS.md](README.CYPHERFIX_AGENTS.md) | Triage + CodeFix agents: hybrid architecture, prioritization algorithm, 11 code tools, diff approval flow, GitHub PR integration, WebSocket protocols |
-| [README.ATTACK_PATHS.md](README.ATTACK_PATHS.md) | Attack path classification system (CVE exploit, brute force, phishing, etc.) |
+
 
 ### Reconnaissance
 

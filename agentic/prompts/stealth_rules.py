@@ -65,6 +65,11 @@ stop and inform the user honestly — do NOT proceed with noisy techniques.
 - Hydra is a brute force tool. ALL brute force attacks are FORBIDDEN in stealth mode.
 - DO NOT use execute_hydra under any circumstances when stealth mode is active.
 
+### denial_of_service — FORBIDDEN
+- DoS attacks are inherently noisy, destructive, and high-footprint. ALL DoS techniques are FORBIDDEN in stealth mode.
+- DO NOT use any auxiliary/dos/* modules, flooding tools (hping3, slowhttptest), or resource exhaustion techniques.
+- If the user requests DoS in stealth mode, STOP and explain via action="ask_user" that DoS cannot be performed stealthily.
+
 ### kali_shell — RESTRICTED
 - Single-target, purpose-specific commands only
 - Allowed: passive lookups (whois, dig, host), downloading specific PoCs, running single-target scripts

@@ -11,11 +11,12 @@ import {
   BACKGROUND_COLORS,
   SELECTION_COLORS,
   CHAIN_SESSION_COLORS,
+  GOAL_FINDING_COLORS,
   FORCE_CONFIG,
   ANIMATION_CONFIG,
   ZOOM_CONFIG,
 } from '../../config'
-import { hasHighSeverityNodes } from '../../utils/nodeHelpers'
+import { hasHighSeverityNodes, isGoalFinding } from '../../utils/nodeHelpers'
 import { useAnimationFrame } from '../../hooks'
 
 const ForceGraph2D = dynamic(() => import('react-force-graph-2d'), {
@@ -117,7 +118,7 @@ export function GraphCanvas2D({
       linkWidth={(link) => getLinkWidth2D(link as GraphLink, selectedNodeId)}
       linkDirectionalParticles={(link) => getParticleCount(link as GraphLink, selectedNodeId)}
       linkDirectionalParticleWidth={(link) => getParticleWidth(link as GraphLink, selectedNodeId)}
-      linkDirectionalParticleColor={(link) => getParticleColor(link as GraphLink)}
+      linkDirectionalParticleColor={(link) => getParticleColor(link as GraphLink, activeChainId)}
       linkDirectionalParticleSpeed={(link) => getParticleSpeed(link as GraphLink)}
       linkDirectionalArrowLength={LINK_SIZES.arrowLength}
       linkDirectionalArrowRelPos={1}
@@ -140,10 +141,20 @@ export function GraphCanvas2D({
         const isActiveChain = graphNode.type === 'AttackChain' && isInActiveChain
         const isExploit = graphNode.type === 'ExploitGvm' || graphNode.type === 'ChainFinding'
         const isExploitInActiveChain = isExploit && !!activeChainId && graphNode.properties?.chain_id === activeChainId
-        // Inactive chain nodes: grey by default, orange when selected
-        const effectiveColor = (isChainNode || isExploit) && !isInActiveChain && !isExploitInActiveChain
-          ? (isSelected ? CHAIN_SESSION_COLORS.inactiveSelected : CHAIN_SESSION_COLORS.inactive)
-          : color
+        const isGoal = isGoalFinding(graphNode)
+        // Inactive chain nodes: grey (dark yellow for diamonds, dark green for goal findings)
+        let effectiveColor: string
+        if ((isChainNode || isExploit) && !isInActiveChain && !isExploitInActiveChain) {
+          if (isGoal) {
+            effectiveColor = isSelected ? GOAL_FINDING_COLORS.active : GOAL_FINDING_COLORS.inactive
+          } else if (isExploit) {
+            effectiveColor = isSelected ? CHAIN_SESSION_COLORS.inactiveSelected : CHAIN_SESSION_COLORS.inactiveFinding
+          } else {
+            effectiveColor = isSelected ? CHAIN_SESSION_COLORS.inactiveSelected : CHAIN_SESSION_COLORS.inactive
+          }
+        } else {
+          effectiveColor = color
+        }
 
         // Helper: draw hexagon path centered at (cx, cy) with given radius
         const drawHexagon = (cx: number, cy: number, r: number) => {

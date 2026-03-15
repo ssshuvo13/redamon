@@ -693,12 +693,13 @@ async function queryAttackChains(session: any, pid: string) {
     { pid }
   )
   const exploitRes = await session.run(
-    `MATCH (f:ChainFinding {project_id: $pid, finding_type: 'exploit_success'})
+    `MATCH (f:ChainFinding {project_id: $pid})
+     WHERE f.finding_type IN ['exploit_success', 'access_gained', 'privilege_escalation', 'credential_found', 'data_exfiltration', 'lateral_movement', 'persistence_established', 'denial_of_service_success', 'social_engineering_success', 'remote_code_execution', 'session_hijacked']
      OPTIONAL MATCH (f)-[:FINDING_RELATES_CVE]->(cve:CVE)
      WITH f, collect(cve.id) AS cveIds
      RETURN f.title AS title, f.target_ip AS targetIp, f.target_port AS targetPort,
             f.metasploit_module AS module,
-            f.evidence AS evidence, f.attack_type AS attackType, cveIds
+            f.evidence AS evidence, f.attack_type AS attackType, f.finding_type AS findingType, cveIds
      ORDER BY f.created_at DESC`,
     { pid }
   )

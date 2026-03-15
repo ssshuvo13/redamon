@@ -57,6 +57,13 @@ from .phishing_social_engineering_prompts import (
     PHISHING_PAYLOAD_FORMAT_GUIDANCE,
 )
 
+# Re-export from denial of service prompts
+from .denial_of_service_prompts import (
+    DOS_TOOLS,
+    DOS_VECTOR_SELECTION,
+    DOS_VERIFICATION_GUIDE,
+)
+
 # Re-export from unclassified attack path prompts
 from .unclassified_prompts import UNCLASSIFIED_EXPLOIT_TOOLS
 
@@ -71,7 +78,7 @@ from .stealth_rules import STEALTH_MODE_RULES
 
 # Import utilities
 from utils import get_session_config_prompt
-from project_settings import get_setting, get_allowed_tools_for_phase, get_hydra_flags_from_settings
+from project_settings import get_setting, get_allowed_tools_for_phase, get_hydra_flags_from_settings, get_dos_settings_dict
 
 
 def _msf_search_failed(execution_trace: list) -> bool:
@@ -109,7 +116,7 @@ def get_phase_tools(
         activate_post_expl: If True, post-exploitation phase is available.
                            If False, exploitation is the final phase.
         post_expl_type: "statefull" for Meterpreter sessions, "stateless" for single commands.
-        attack_path_type: Type of attack path ("cve_exploit", "brute_force_credential_guess", "phishing_social_engineering")
+        attack_path_type: Type of attack path ("cve_exploit", "brute_force_credential_guess", "phishing_social_engineering", "denial_of_service")
         execution_trace: List of execution steps (used to detect MSF search failures).
 
     Returns:
@@ -210,7 +217,8 @@ def get_phase_tools(
         # SELECT WORKFLOW BASED ON ATTACK SKILL TYPE
         if (attack_path_type == "brute_force_credential_guess"
                 and "brute_force_credential_guess" in enabled_builtins
-                and "execute_hydra" in allowed_tools):
+                and "execute_hydra" in allowed_tools
+                and not (get_setting('ROE_ENABLED', False) and not get_setting('ROE_ALLOW_ACCOUNT_LOCKOUT', False))):
             # Hydra-based brute force workflow
             hydra_flags = get_hydra_flags_from_settings()
             # Build flags without -t for templates that override thread count per protocol
@@ -224,7 +232,8 @@ def get_phase_tools(
             # Add wordlist reference guide
             parts.append(HYDRA_WORDLIST_GUIDANCE)
         elif (attack_path_type == "phishing_social_engineering"
-                and "phishing_social_engineering" in enabled_builtins):
+                and "phishing_social_engineering" in enabled_builtins
+                and not (get_setting('ROE_ENABLED', False) and not get_setting('ROE_ALLOW_SOCIAL_ENGINEERING', False))):
             # Phishing / Social Engineering workflow
             parts.append(PHISHING_SOCIAL_ENGINEERING_TOOLS)
             parts.append(PHISHING_PAYLOAD_FORMAT_GUIDANCE)
@@ -235,6 +244,28 @@ def get_phase_tools(
                     f"## Pre-Configured SMTP Settings\n\n"
                     f"Use these for email delivery via execute_code (Python smtplib):\n{smtp_config}\n"
                 )
+        elif (attack_path_type == "denial_of_service"
+                and "denial_of_service" in enabled_builtins
+                and not (get_setting('ROE_ENABLED', False) and not get_setting('ROE_ALLOW_DOS', False))):
+            # Denial of Service workflow — inject DoS settings into prompt templates
+            # Blocked when RoE is enabled AND DoS is prohibited (falls to unclassified)
+            dos_settings = get_dos_settings_dict()
+            assessment_only = get_setting('DOS_ASSESSMENT_ONLY', False)
+            dos_assessment_block = (
+                "\n## ASSESSMENT ONLY MODE (ACTIVE)\n"
+                "You are in ASSESSMENT-ONLY mode. Do NOT execute any DoS attack.\n"
+                "Only research and report whether the target is VULNERABLE to DoS:\n"
+                "- Run nmap scripts (--script dos, --script rdp-ms12-020)\n"
+                "- Run nuclei -tags dos\n"
+                "- Research known DoS CVEs for detected service versions\n"
+                '- Report findings with action="complete"\n'
+            ) if assessment_only else ""
+            parts.append(DOS_TOOLS.format(
+                **dos_settings,
+                dos_assessment_only_block=dos_assessment_block,
+            ))
+            parts.append(DOS_VECTOR_SELECTION.format(**dos_settings))
+            parts.append(DOS_VERIFICATION_GUIDE)
         elif attack_path_type.startswith("user_skill:"):
             # User-uploaded attack skill — inject its .md content as workflow
             user_skill_content = _resolve_user_skill()
@@ -326,6 +357,10 @@ __all__ = [
     # Phishing / Social Engineering
     "PHISHING_SOCIAL_ENGINEERING_TOOLS",
     "PHISHING_PAYLOAD_FORMAT_GUIDANCE",
+    # Denial of Service
+    "DOS_TOOLS",
+    "DOS_VECTOR_SELECTION",
+    "DOS_VERIFICATION_GUIDE",
     # Unclassified attack path
     "UNCLASSIFIED_EXPLOIT_TOOLS",
     # Post-exploitation

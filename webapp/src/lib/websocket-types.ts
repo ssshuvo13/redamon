@@ -143,7 +143,7 @@ export interface PlanCompletePayload {
 export interface PhaseUpdatePayload {
   current_phase: string
   iteration_count: number
-  attack_path_type?: string  // "cve_exploit", "brute_force_credential_guess", or "<term>-unclassified"
+  attack_path_type?: string  // "cve_exploit", "brute_force_credential_guess", "phishing_social_engineering", "denial_of_service", or "<term>-unclassified"
 }
 
 export interface TodoItem {

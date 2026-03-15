@@ -32,11 +32,11 @@ ApprovalDecision = Literal["approve", "modify", "abort"]
 QuestionFormat = Literal["text", "single_choice", "multi_choice"]
 
 # Attack path types for dynamic routing
-# Known types: "cve_exploit", "brute_force_credential_guess", "phishing_social_engineering"
+# Known types: "cve_exploit", "brute_force_credential_guess", "phishing_social_engineering", "denial_of_service"
 # Unclassified types: "<descriptive_term>-unclassified" (e.g., "sql_injection-unclassified")
 AttackPathType = str  # Validated by AttackPathClassification.attack_path_type validator
 
-KNOWN_ATTACK_PATHS = {"cve_exploit", "brute_force_credential_guess", "phishing_social_engineering"}
+KNOWN_ATTACK_PATHS = {"cve_exploit", "brute_force_credential_guess", "phishing_social_engineering", "denial_of_service"}
 _UNCLASSIFIED_RE = re.compile(r'^[a-z][a-z0-9_]*-unclassified$')
 
 
@@ -238,7 +238,14 @@ class ExtractedTargetInfo(BaseModel):
 
 class ChainFindingExtract(BaseModel):
     """Single finding extracted by LLM from tool output for attack chain graph."""
-    finding_type: str = "custom"  # vulnerability_confirmed, credential_found, exploit_success, etc.
+    # Informational: service_identified, vulnerability_confirmed, configuration_found,
+    #                exploit_module_found, defense_detected, information_disclosure
+    # Goal/outcome:  exploit_success, access_gained, privilege_escalation, credential_found,
+    #                data_exfiltration, lateral_movement, persistence_established,
+    #                denial_of_service_success, social_engineering_success, remote_code_execution,
+    #                session_hijacked
+    # Fallback:      custom
+    finding_type: str = "custom"
     severity: str = "info"        # critical, high, medium, low, info
     title: str = ""
     evidence: str = ""
@@ -358,7 +365,7 @@ class AttackPathClassification(BaseModel):
         description="Required phase for this request: 'informational' for recon, 'exploitation' for attacks"
     )
     attack_path_type: str = Field(
-        description="The classified attack path type: 'cve_exploit', 'brute_force_credential_guess', or '<term>-unclassified'"
+        description="The classified attack path type: 'cve_exploit', 'brute_force_credential_guess', 'phishing_social_engineering', 'denial_of_service', or '<term>-unclassified'"
     )
     secondary_attack_path: Optional[str] = Field(
         default=None,

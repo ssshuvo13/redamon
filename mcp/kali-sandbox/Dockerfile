@@ -45,6 +45,9 @@ RUN apt-get install -y --fix-missing \
     smbclient \
     sqlmap \
     jq \
+    # DoS / stress-testing
+    hping3 \
+    slowhttptest \
     # Compilers (for execute_code C/C++ support)
     gcc \
     g++ \

@@ -33,7 +33,7 @@ async def classify_attack_path(
 
     Returns:
         Tuple of (attack_path_type, required_phase, target_host, target_port, target_cves):
-        - attack_path_type: "cve_exploit", "brute_force_credential_guess", or "<term>-unclassified"
+        - attack_path_type: "cve_exploit", "brute_force_credential_guess", "phishing_social_engineering", "denial_of_service", or "<term>-unclassified"
         - required_phase: "informational", "exploitation", or "post_exploitation"
         - target_host: IP or hostname extracted from objective (or None)
         - target_port: port number extracted from objective (or None)

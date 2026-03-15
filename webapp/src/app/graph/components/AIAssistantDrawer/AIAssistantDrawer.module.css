@@ -825,6 +825,87 @@
   }
 }
 
+.loadingEyeIcon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  width: auto !important;
+  height: auto !important;
+}
+
+.eyeContainer {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.loadingEye {
+  transform: scale(1);
+}
+
+.eyePupil {
+  position: absolute;
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  top: 50%;
+  left: 50%;
+  transform: translate(calc(-50% + 4px), calc(-50% - 2px));
+  animation: pupilFlash 3s ease-in-out infinite;
+}
+
+@keyframes pupilFlash {
+  0% { background: #facc15; box-shadow: 0 0 3px 1px #facc15; }
+  8% { background: #22d3ee; box-shadow: 0 0 3px 1px #22d3ee; }
+  16% { background: #f97316; box-shadow: 0 0 3px 1px #f97316; }
+  24% { background: #a78bfa; box-shadow: 0 0 3px 1px #a78bfa; }
+  32% { background: #4ade80; box-shadow: 0 0 3px 1px #4ade80; }
+  40% { background: #f472b6; box-shadow: 0 0 3px 1px #f472b6; }
+  48% { background: #38bdf8; box-shadow: 0 0 3px 1px #38bdf8; }
+  56% { background: #ef4444; box-shadow: 0 0 3px 1px #ef4444; }
+  64% { background: #2dd4bf; box-shadow: 0 0 3px 1px #2dd4bf; }
+  72% { background: #e879f9; box-shadow: 0 0 3px 1px #e879f9; }
+  80% { background: #84cc16; box-shadow: 0 0 3px 1px #84cc16; }
+  88% { background: #fb923c; box-shadow: 0 0 3px 1px #fb923c; }
+  100% { background: #facc15; box-shadow: 0 0 3px 1px #facc15; }
+}
+
+.hackerIcon {
+  animation: hackerPulse 1.5s ease-in-out infinite;
+  color: var(--accent-red, #ef4444);
+}
+
+@keyframes hackerPulse {
+  0%, 100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.5;
+    transform: scale(1.15);
+  }
+}
+
+.loadingWord {
+  animation: fadeInUp 0.4s ease-out;
+  display: inline-block;
+}
+
+@keyframes fadeInUp {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
 /* =============================================================================
    INPUT AREA
    ============================================================================= */

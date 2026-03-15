@@ -102,12 +102,19 @@ DEFAULT_AGENT_SETTINGS: dict[str, Any] = {
     # Phishing / Social Engineering
     'PHISHING_SMTP_CONFIG': '',  # Free-text SMTP config for phishing email delivery (optional)
 
+    # Denial of Service
+    'DOS_MAX_DURATION': 60,             # Max seconds per DoS attempt
+    'DOS_MAX_ATTEMPTS': 3,              # Max different vectors to try
+    'DOS_CONCURRENT_CONNECTIONS': 1000, # Connections for app-layer DoS (slowloris etc.)
+    'DOS_ASSESSMENT_ONLY': False,       # True = only check vulnerability, don't attack
+
     # Attack Skill Configuration
     'ATTACK_SKILL_CONFIG': {
         'builtIn': {
             'cve_exploit': True,
             'brute_force_credential_guess': True,
             'phishing_social_engineering': True,
+            'denial_of_service': True,
         },
         'user': {},
     },
@@ -221,6 +228,10 @@ def fetch_agent_settings(project_id: str, webapp_url: str) -> dict[str, Any]:
     settings['SHODAN_ENABLED'] = project.get('shodanEnabled', DEFAULT_AGENT_SETTINGS['SHODAN_ENABLED'])
     settings['STEALTH_MODE'] = project.get('stealthMode', DEFAULT_AGENT_SETTINGS['STEALTH_MODE'])
     settings['PHISHING_SMTP_CONFIG'] = project.get('phishingSmtpConfig', DEFAULT_AGENT_SETTINGS['PHISHING_SMTP_CONFIG'])
+    settings['DOS_MAX_DURATION'] = project.get('dosMaxDuration', DEFAULT_AGENT_SETTINGS['DOS_MAX_DURATION'])
+    settings['DOS_MAX_ATTEMPTS'] = project.get('dosMaxAttempts', DEFAULT_AGENT_SETTINGS['DOS_MAX_ATTEMPTS'])
+    settings['DOS_CONCURRENT_CONNECTIONS'] = project.get('dosConcurrentConnections', DEFAULT_AGENT_SETTINGS['DOS_CONCURRENT_CONNECTIONS'])
+    settings['DOS_ASSESSMENT_ONLY'] = project.get('dosAssessmentOnly', DEFAULT_AGENT_SETTINGS['DOS_ASSESSMENT_ONLY'])
     settings['ATTACK_SKILL_CONFIG'] = project.get('attackSkillConfig', DEFAULT_AGENT_SETTINGS['ATTACK_SKILL_CONFIG'])
     settings['USER_ATTACK_SKILLS'] = project.get('userAttackSkills', DEFAULT_AGENT_SETTINGS['USER_ATTACK_SKILLS'])
 
@@ -459,3 +470,12 @@ def get_hydra_flags_from_settings() -> str:
     if get_setting('HYDRA_VERBOSE', True):
         parts.append("-V")
     return " ".join(parts)
+
+
+def get_dos_settings_dict() -> dict:
+    """Get DoS settings as a dict for prompt template injection."""
+    return {
+        'dos_max_duration': get_setting('DOS_MAX_DURATION', 60),
+        'dos_max_attempts': get_setting('DOS_MAX_ATTEMPTS', 3),
+        'dos_connections': get_setting('DOS_CONCURRENT_CONNECTIONS', 1000),
+    }

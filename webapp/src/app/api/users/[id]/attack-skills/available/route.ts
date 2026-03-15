@@ -8,8 +8,8 @@ interface RouteParams {
 const BUILT_IN_SKILLS = [
   {
     id: 'cve_exploit',
-    name: 'CVE Exploit',
-    description: 'Exploit known CVEs using Metasploit modules against target services',
+    name: 'CVE (MSF)',
+    description: 'Exploit known CVEs using Metasploit Framework modules against target services',
   },
   {
     id: 'brute_force_credential_guess',
@@ -20,6 +20,11 @@ const BUILT_IN_SKILLS = [
     id: 'phishing_social_engineering',
     name: 'Phishing / Social Engineering',
     description: 'Payload generation, malicious documents, and email delivery to human targets',
+  },
+  {
+    id: 'denial_of_service',
+    name: 'Denial of Service (DoS)',
+    description: 'Disrupt service availability using flooding, resource exhaustion, and crash exploits',
   },
 ]
 

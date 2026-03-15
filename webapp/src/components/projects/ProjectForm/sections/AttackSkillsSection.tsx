@@ -2,12 +2,13 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import Link from 'next/link'
-import { ChevronDown, Bug, KeyRound, Mail, Swords, Loader2, Settings } from 'lucide-react'
+import { ChevronDown, Bug, KeyRound, Mail, Swords, Loader2, Settings, Zap } from 'lucide-react'
 import type { Project } from '@prisma/client'
 import { useProject } from '@/providers/ProjectProvider'
 import { Toggle } from '@/components/ui/Toggle/Toggle'
 import { HydraSection } from './BruteForceSection'
 import { PhishingSection } from './PhishingSection'
+import { DosSection } from './DosSection'
 import styles from '../ProjectForm.module.css'
 
 type FormData = Omit<Project, 'id' | 'userId' | 'createdAt' | 'updatedAt' | 'user'>
@@ -34,8 +35,8 @@ interface UserSkillDef {
 const BUILT_IN_SKILLS: BuiltInSkillDef[] = [
   {
     id: 'cve_exploit',
-    name: 'CVE Exploit',
-    description: 'Exploit known CVEs using Metasploit modules against target services',
+    name: 'CVE (MSF)',
+    description: 'Exploit known CVEs using Metasploit Framework modules against target services',
     icon: <Bug size={16} />,
   },
   {
@@ -50,6 +51,12 @@ const BUILT_IN_SKILLS: BuiltInSkillDef[] = [
     description: 'Payload generation, malicious documents, and email delivery to human targets',
     icon: <Mail size={16} />,
   },
+  {
+    id: 'denial_of_service',
+    name: 'Denial of Service (DoS)',
+    description: 'Disrupt service availability using flooding, resource exhaustion, and crash exploits',
+    icon: <Zap size={16} />,
+  },
 ]
 
 type AttackSkillConfig = {
@@ -62,6 +69,7 @@ const DEFAULT_CONFIG: AttackSkillConfig = {
     cve_exploit: true,
     brute_force_credential_guess: true,
     phishing_social_engineering: true,
+    denial_of_service: true,
   },
   user: {},
 }
@@ -202,6 +210,9 @@ export function AttackSkillsSection({ data, updateField }: AttackSkillsSectionPr
                   )}
                   {enabled && skill.id === 'phishing_social_engineering' && (
                     <PhishingSection data={data} updateField={updateField} />
+                  )}
+                  {enabled && skill.id === 'denial_of_service' && (
+                    <DosSection data={data} updateField={updateField} />
                   )}
                 </div>
               )

@@ -9,7 +9,7 @@
 'use client'
 
 import React, { useState, useRef, useEffect, useCallback, KeyboardEvent } from 'react'
-import { Send, Bot, User, Loader2, AlertCircle, Sparkles, Plus, Shield, ShieldAlert, Target, Zap, HelpCircle, WifiOff, Wifi, Square, Play, Download, Wrench, History, ChevronDown, EyeOff, Eye, Mail, Copy, Check, Swords, Lightbulb, Settings, X } from 'lucide-react'
+import { Send, Bot, User, Loader2, AlertCircle, Sparkles, Plus, Shield, ShieldAlert, Target, Zap, HelpCircle, WifiOff, Wifi, Square, Play, Download, Wrench, History, ChevronDown, EyeOff, Eye, Mail, Copy, Check, Swords, Lightbulb, Settings, X, Radiation } from 'lucide-react'
 import { StealthIcon } from '@/components/icons/StealthIcon'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
@@ -138,8 +138,8 @@ const PHASE_CONFIG = {
 
 const KNOWN_ATTACK_PATH_CONFIG: Record<string, { label: string; shortLabel: string; color: string; bgColor: string }> = {
   cve_exploit: {
-    label: 'CVE Exploit',
-    shortLabel: 'CVE',
+    label: 'CVE (MSF)',
+    shortLabel: 'CVE/MSF',
     color: 'var(--status-warning)',
     bgColor: 'rgba(245, 158, 11, 0.15)',
   },
@@ -154,6 +154,12 @@ const KNOWN_ATTACK_PATH_CONFIG: Record<string, { label: string; shortLabel: stri
     shortLabel: 'PHISH',
     color: 'var(--accent-tertiary, #ec4899)',
     bgColor: 'rgba(236, 72, 153, 0.15)',
+  },
+  denial_of_service: {
+    label: 'Denial of Service (DoS)',
+    shortLabel: 'DoS',
+    color: 'var(--status-error, #ef4444)',
+    bgColor: 'rgba(239, 68, 68, 0.15)',
   },
 }
 
@@ -595,6 +601,36 @@ const INFORMATIONAL_GROUPS: SESubGroup[] = [
     ],
   },
   {
+    id: 'shodan_dork',
+    title: 'Shodan & Google Dork OSINT',
+    items: [
+      {
+        osLabel: 'Shodan',
+        suggestions: [
+          { label: 'Full Shodan host profile', prompt: 'Use shodan with action="host" on all in-scope IP addresses to get detailed info: open ports, service banners, SSL certificates, known CVEs, OS detection, and organization. Compare findings with the graph data to identify gaps.' },
+          { label: 'Search for exposed services in target org', prompt: 'Use shodan with action="search" and query "org:<target-organization>" to discover all internet-facing devices belonging to the target. Identify shadow IT, forgotten servers, and services not found by active scanning.' },
+          { label: 'Find vulnerable hosts (has_vuln filter)', prompt: 'Use shodan with action="search" and query "net:<target-range> has_vuln:true" to find hosts with known CVEs. Cross-reference with graph data to prioritize exploitation targets.' },
+          { label: 'Subdomain discovery via Shodan DNS', prompt: 'Use shodan with action="dns_domain" on the target domain to enumerate subdomains and DNS records. Compare with graph data to find subdomains missed by other recon tools.' },
+          { label: 'Reverse DNS on target IPs', prompt: 'Use shodan with action="dns_reverse" on all discovered IP addresses to find hostnames and identify shared hosting or virtual hosts that could expand the attack surface.' },
+          { label: 'Count exposed services before deep scan', prompt: 'Use shodan with action="count" and queries like "net:<range> port:22", "net:<range> port:3389", "net:<range> port:445" to estimate the attack surface size without consuming search credits.' },
+        ],
+      },
+      {
+        osLabel: 'Google Dork',
+        suggestions: [
+          { label: 'Find exposed sensitive files', prompt: 'Use google_dork with query "site:<target-domain> filetype:sql OR filetype:env OR filetype:log OR filetype:bak OR filetype:conf" to discover publicly indexed sensitive files like database dumps, environment configs, and logs.' },
+          { label: 'Discover admin panels and login pages', prompt: 'Use google_dork with query "site:<target-domain> inurl:admin OR inurl:login OR inurl:dashboard OR inurl:console OR intitle:\"admin panel\"" to find exposed management interfaces indexed by Google.' },
+          { label: 'Find directory listings', prompt: 'Use google_dork with query "site:<target-domain> intitle:\"index of /\" OR intitle:\"directory listing\"" to discover open directory listings that may expose sensitive files, source code, or backups.' },
+          { label: 'Discover exposed API docs and endpoints', prompt: 'Use google_dork with query "site:<target-domain> inurl:swagger OR inurl:api-docs OR inurl:graphql OR filetype:json \"openapi\"" to find publicly indexed API documentation and endpoint schemas.' },
+          { label: 'Find configuration and credential leaks', prompt: 'Use google_dork with query "site:<target-domain> filetype:xml OR filetype:yaml OR filetype:ini OR filetype:cfg \"password\" OR \"secret\" OR \"api_key\"" to discover leaked configuration files containing credentials.' },
+          { label: 'Discover error pages with stack traces', prompt: 'Use google_dork with query "site:<target-domain> \"stack trace\" OR \"fatal error\" OR \"exception\" OR \"debug\" OR \"traceback\"" to find error pages that leak internal paths, framework versions, and database details.' },
+          { label: 'Find exposed Git and SVN repositories', prompt: 'Use google_dork with query "site:<target-domain> inurl:.git OR inurl:.svn OR inurl:.hg OR intitle:\"index of /.git\"" to discover exposed version control repositories that may contain source code and secrets.' },
+          { label: 'Comprehensive dork sweep', prompt: 'Run a comprehensive Google dork sweep against the target domain: search for exposed files (sql, env, log, bak), admin panels, directory listings, error pages, API docs, and git repos. Compile all findings into a prioritized report.' },
+        ],
+      },
+    ],
+  },
+  {
     id: 'active_verify',
     title: 'Active Verification',
     items: [
@@ -618,7 +654,7 @@ const INFORMATIONAL_GROUPS: SESubGroup[] = [
 const EXPLOITATION_GROUPS: SESubGroup[] = [
   {
     id: 'cve_exploit',
-    title: 'CVE Exploitation',
+    title: 'CVE (MSF)',
     items: [
       {
         suggestions: [
@@ -659,6 +695,62 @@ const EXPLOITATION_GROUPS: SESubGroup[] = [
           { label: 'Exploit SSRF vulnerabilities', prompt: 'Query the graph for endpoints that accept URL parameters. Use execute_curl to test SSRF payloads targeting internal services (http://127.0.0.1, http://169.254.169.254 for cloud metadata, internal admin panels).' },
           { label: 'Test for directory traversal and LFI', prompt: 'Query the graph for endpoints with file path parameters. Use execute_curl to test directory traversal payloads to read /etc/passwd, /etc/shadow, application config files, and attempt LFI to RCE via log poisoning.' },
           { label: 'Exploit XSS for session hijacking', prompt: 'Query the graph for endpoints with reflected or stored XSS potential. Craft XSS payloads using execute_curl to test for JavaScript execution and demonstrate session cookie theft.' },
+        ],
+      },
+    ],
+  },
+  {
+    id: 'dos',
+    title: 'Denial of Service (DoS)',
+    items: [
+      {
+        suggestions: [
+          { label: 'DoS the target (auto-select best vector)', prompt: 'Perform a denial of service attack against the target. Analyze the discovered services and vulnerabilities from the graph, select the most effective DoS vector (known CVE, HTTP application, Layer 4 flood, or application logic), execute the attack, and verify the service is down.' },
+          { label: 'Take down the web server', prompt: 'Disrupt the web server on the target to make it unavailable. Choose the best approach based on the server type and version — try slowloris, slow POST, known CVE modules, or crafted crash requests. Verify the site is unreachable after the attack.' },
+          { label: 'Stress test target service availability', prompt: 'Test the resilience of the target service to denial of service attacks. Try multiple DoS vectors (up to the configured max attempts), document which ones succeed and which fail, and report whether the service is resilient or vulnerable.' },
+        ],
+      },
+      {
+        osLabel: 'Known CVE DoS',
+        suggestions: [
+          { label: 'DoS RDP via MS12-020', prompt: 'Use Metasploit auxiliary/dos/windows/rdp/ms12_020_maxchannelids to crash the RDP service on the target. First verify vulnerability with nmap --script rdp-ms12-020, then execute the DoS module and verify the service is down.' },
+          { label: 'DoS IIS via MS15-034 (HTTP.sys)', prompt: 'Use Metasploit auxiliary/dos/http/ms15_034_ulonglongadd to crash IIS on the target via the HTTP.sys Range header vulnerability. Verify the web server becomes unresponsive after the attack.' },
+          { label: 'DoS Apache via Range header', prompt: 'Use Metasploit auxiliary/dos/http/apache_range_dos to crash an Apache web server (< 2.2.21) by sending overlapping Range header requests. Verify the service goes down.' },
+          { label: 'Search for DoS modules for target service', prompt: 'Search Metasploit for DoS modules matching the target service (search auxiliary/dos/<service>). Select the most applicable module, configure it, and execute to disrupt the service.' },
+        ],
+      },
+      {
+        osLabel: 'HTTP Application DoS',
+        suggestions: [
+          { label: 'Slowloris (incomplete headers)', prompt: 'Use slowhttptest in Slowloris mode (-H) to exhaust the web server connection pool by sending incomplete HTTP headers. Keep connections open and verify the web server stops responding to legitimate requests.' },
+          { label: 'Slow POST body (R.U.D.Y.)', prompt: 'Use slowhttptest in Slow POST mode (-B) to send HTTP POST requests with an extremely slow body transmission rate. Target form endpoints and verify the web server becomes unavailable.' },
+          { label: 'Range header attack', prompt: 'Use slowhttptest in Range mode (-R) to send requests with multiple overlapping Range header values, exhausting server memory. Verify the Apache web server becomes unresponsive.' },
+          { label: 'Hash collision DoS (PHP/Java/Python)', prompt: 'Use Metasploit auxiliary/dos/http/hashcollision_dos to send crafted POST parameters that trigger hash collision in the web framework, consuming CPU. Verify the application becomes unresponsive.' },
+        ],
+      },
+      {
+        osLabel: 'Layer 4 Flooding',
+        suggestions: [
+          { label: 'TCP SYN flood', prompt: 'Use hping3 with SYN flood mode (hping3 -S --flood) against the target port to exhaust its connection state table. Run for the configured duration and verify the service stops accepting connections.' },
+          { label: 'UDP flood', prompt: 'Use hping3 in UDP flood mode (hping3 --udp --flood) against the target UDP service (DNS, SNMP). Verify the service becomes unresponsive to legitimate queries.' },
+          { label: 'ICMP flood', prompt: 'Use hping3 in ICMP flood mode (hping3 --icmp --flood) to saturate the target network link. Verify that other services on the host become unreachable due to network saturation.' },
+        ],
+      },
+      {
+        osLabel: 'Application Logic DoS',
+        suggestions: [
+          { label: 'ReDoS (regex denial of service)', prompt: 'Identify an endpoint that processes regex input. Use execute_code (Python) to craft a regex-bomb payload that causes catastrophic backtracking, then send it to the endpoint and verify it hangs or times out.' },
+          { label: 'XML billion laughs bomb', prompt: 'Use execute_code (Python) to craft an XML billion laughs payload (nested entity expansion) and POST it to an endpoint that parses XML. Verify the server exhausts memory or becomes unresponsive.' },
+          { label: 'GraphQL depth/complexity attack', prompt: 'Use execute_code (Python) to craft a deeply nested GraphQL query that exceeds the server query depth limit. Send it to the GraphQL endpoint and verify it causes excessive resource consumption or crashes.' },
+          { label: 'Resource exhaustion via API abuse', prompt: 'Use execute_code (Python) to send rapid concurrent requests to an expensive API endpoint (large file generation, complex queries, heavy computation). Verify the service degrades or becomes unavailable.' },
+        ],
+      },
+      {
+        osLabel: 'Single-Request Crash',
+        suggestions: [
+          { label: 'Range header overflow', prompt: 'Use execute_curl to send a request with an oversized Range header value (bytes=0-18446744073709551615) to trigger an integer overflow crash in the web server. Verify the service goes down.' },
+          { label: 'Malformed Content-Length crash', prompt: 'Use execute_curl to send a POST request with an absurdly large Content-Length header to crash the web server memory allocation. Verify the service becomes unresponsive.' },
+          { label: 'Header bomb', prompt: 'Use execute_curl to send a request with an extremely large custom header (10KB+) to overflow the web server header buffer. Verify the service crashes or stops responding.' },
         ],
       },
     ],
@@ -795,6 +887,86 @@ const POST_EXPLOITATION_GROUPS: SESubGroup[] = [
   },
 ]
 
+const HACKER_LOADING_WORDS = [
+  'Unmasking the hidden...',
+  'Releasing the ghost...',
+  'Walking through walls...',
+  'Reading the silence...',
+  'Tracing the invisible...',
+  'Breaking the seal...',
+  'Listening to the wire...',
+  'Entering the void...',
+  'Harvesting shadows...',
+  'Decoding the whisper...',
+  'Piercing the veil...',
+  'Crawling the abyss...',
+  'Following the breadcrumbs...',
+  'Mapping the unknown...',
+  'Dissolving the perimeter...',
+  'Opening forbidden doors...',
+  'Extracting the buried...',
+  'Slipping through the cracks...',
+  'Hunting in the dark...',
+  'Echoing through the network...',
+  'Awakening dormant nodes...',
+  'Weaving through defenses...',
+  'Summoning the payload...',
+  'Breathing beneath the surface...',
+  'Fracturing the cipher...',
+  'Probing the depths...',
+  'Ghosting the perimeter...',
+  'Excavating secrets...',
+  'Burning through layers...',
+  'Snaking through tunnels...',
+  'Unchaining the locked...',
+  'Drifting past sentinels...',
+  'Corrupting the signal...',
+  'Rewriting the rules...',
+  'Bleeding into the system...',
+  'Disassembling the core...',
+  'Shattering the handshake...',
+  'Rising from the packets...',
+  'Consuming the firewall...',
+  'Becoming root...',
+  'Whispering to the kernel...',
+  'Poisoning the well...',
+  'Forging the token...',
+  'Stalking the daemon...',
+  'Bending the protocol...',
+  'Erasing our footprints...',
+  'Hijacking the session...',
+  'Drowning the watchdog...',
+  'Threading the needle...',
+  'Swallowing the key...',
+  'Haunting the registry...',
+  'Splitting the atom...',
+  'Infecting the handshake...',
+  'Severing the chain...',
+  'Melting through encryption...',
+  'Overwriting the truth...',
+  'Possessing the process...',
+  'Feeding the exploit...',
+  'Vanishing from the logs...',
+  'Ascending the privilege tree...',
+]
+
+function useRotatingWord(words: string[], intervalMs = 2500) {
+  const [index, setIndex] = useState(() => Math.floor(Math.random() * words.length))
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setIndex(prev => {
+        let next: number
+        do {
+          next = Math.floor(Math.random() * words.length)
+        } while (next === prev && words.length > 1)
+        return next
+      })
+    }, intervalMs)
+    return () => clearInterval(timer)
+  }, [words.length, intervalMs])
+  return words[index]
+}
+
 export function AIAssistantDrawer({
   isOpen,
   onClose,
@@ -814,6 +986,7 @@ export function AIAssistantDrawer({
   onToggleOtherChains,
   hasOtherChains = false,
 }: AIAssistantDrawerProps) {
+  const hackerWord = useRotatingWord(HACKER_LOADING_WORDS, 5000)
   const [chatItems, setChatItems] = useState<ChatItem[]>([])
   const [inputValue, setInputValue] = useState('')
   const [isLoading, setIsLoading] = useState(false)
@@ -1039,6 +1212,33 @@ export function AIAssistantDrawer({
     fetchSkills()
     return () => { cancelled = true }
   }, [userId, projectId])
+
+  const eyeRef = useRef<HTMLImageElement>(null)
+
+  // Random heartbeat for the eye
+  useEffect(() => {
+    if (!isLoading) return
+    let timeout: ReturnType<typeof setTimeout>
+    const beat = () => {
+      const el = eyeRef.current
+      if (!el) return
+      el.style.transition = 'transform 0.15s ease-out'
+      el.style.transform = 'scale(1.25)'
+      setTimeout(() => {
+        el.style.transform = 'scale(1)'
+        setTimeout(() => {
+          el.style.transform = 'scale(1.15)'
+          setTimeout(() => {
+            el.style.transform = 'scale(1)'
+          }, 150)
+        }, 120)
+      }, 150)
+      // Next beat at random interval between 4s and 10s
+      timeout = setTimeout(beat, 4000 + Math.random() * 6000)
+    }
+    timeout = setTimeout(beat, 2000 + Math.random() * 4000)
+    return () => clearTimeout(timeout)
+  }, [isLoading])
 
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const messagesContainerRef = useRef<HTMLDivElement>(null)
@@ -3079,13 +3279,15 @@ export function AIAssistantDrawer({
 
         {isLoading && (
           <div className={`${styles.message} ${styles.messageAssistant}`}>
-            <div className={styles.messageIcon}>
-              <Bot size={14} />
+            <div className={`${styles.messageIcon} ${styles.loadingEyeIcon}`}>
+              <div className={styles.eyeContainer}>
+                <img src="/logo.png" alt="RedAmon" width={34} height={21} className={styles.loadingEye} ref={eyeRef} />
+                <div className={styles.eyePupil} />
+              </div>
             </div>
             <div className={styles.messageContent}>
               <div className={styles.loadingIndicator}>
-                <Loader2 size={14} className={styles.spinner} />
-                <span>Processing...</span>
+                <span key={hackerWord} className={styles.loadingWord}>{hackerWord}</span>
               </div>
             </div>
           </div>

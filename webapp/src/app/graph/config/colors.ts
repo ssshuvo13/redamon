@@ -74,7 +74,7 @@ export const LINK_COLORS = {
   highlighted: '#60a5fa',
   particle: '#60a5fa',
   chainParticle: '#f59e0b',   // Amber - animated flow on attack chain edges
-  chainLink: '#6b7280',       // Gray-500 - attack chain edges
+  chainLink: '#2d3748',       // Gray-750 - attack chain edges (unselected, dark)
 } as const
 
 // Selection colors
@@ -86,7 +86,29 @@ export const SELECTION_COLORS = {
 export const CHAIN_SESSION_COLORS = {
   inactive: '#6b7280',          // Grey-500 — chains not in active session
   inactiveSelected: '#f59e0b',  // Amber — inactive chain node when clicked/selected
+  inactiveFinding: '#3d3107',   // Dark yellow — inactive non-goal ChainFinding diamonds
   activeRing: '#facc15',        // Yellow-400 — pulsing ring on active AttackChain node
+} as const
+
+// Goal/outcome finding types — these represent achieved attack objectives
+export const GOAL_FINDING_TYPES = new Set([
+  'exploit_success',
+  'access_gained',
+  'privilege_escalation',
+  'credential_found',
+  'data_exfiltration',
+  'lateral_movement',
+  'persistence_established',
+  'denial_of_service_success',
+  'social_engineering_success',
+  'remote_code_execution',
+  'session_hijacked',
+])
+
+// Colors for goal ChainFinding diamonds
+export const GOAL_FINDING_COLORS = {
+  active: '#4ade80',       // Green-400 — goal achieved (active chain)
+  inactive: '#276d43',     // Dark green — goal achieved (inactive chain)
 } as const
 
 // Background colors by theme

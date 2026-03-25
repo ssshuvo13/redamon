@@ -70,11 +70,13 @@ RUN ARCH=$(dpkg --print-architecture) && \
 ENV PATH="${PATH}:/usr/local/go/bin:/root/go/bin"
 ENV GOPATH="/root/go"
 
-# Install ProjectDiscovery tools (naabu, nuclei)
+# Install ProjectDiscovery tools (naabu, nuclei, interactsh)
 # Source: https://github.com/projectdiscovery/naabu (AGPL-3.0)
 # Source: https://github.com/projectdiscovery/nuclei (AGPL-3.0)
+# Source: https://github.com/projectdiscovery/interactsh (MIT)
 RUN go install -v github.com/projectdiscovery/naabu/v2/cmd/naabu@latest \
-    && go install -v github.com/projectdiscovery/nuclei/v3/cmd/nuclei@latest
+    && go install -v github.com/projectdiscovery/nuclei/v3/cmd/nuclei@latest \
+    && go install -v github.com/projectdiscovery/interactsh/cmd/interactsh-client@latest
 
 # Update nuclei templates
 RUN nuclei -update-templates || true

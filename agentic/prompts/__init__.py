@@ -64,6 +64,13 @@ from .denial_of_service_prompts import (
     DOS_VERIFICATION_GUIDE,
 )
 
+# Re-export from SQL injection prompts
+from .sql_injection_prompts import (
+    SQLI_TOOLS,
+    SQLI_OOB_WORKFLOW,
+    SQLI_PAYLOAD_REFERENCE,
+)
+
 # Re-export from unclassified attack path prompts
 from .unclassified_prompts import UNCLASSIFIED_EXPLOIT_TOOLS
 
@@ -116,7 +123,7 @@ def get_phase_tools(
         activate_post_expl: If True, post-exploitation phase is available.
                            If False, exploitation is the final phase.
         post_expl_type: "statefull" for Meterpreter sessions, "stateless" for single commands.
-        attack_path_type: Type of attack path ("cve_exploit", "brute_force_credential_guess", "phishing_social_engineering", "denial_of_service")
+        attack_path_type: Type of attack path ("cve_exploit", "brute_force_credential_guess", "phishing_social_engineering", "denial_of_service", "sql_injection")
         execution_trace: List of execution steps (used to detect MSF search failures).
 
     Returns:
@@ -195,33 +202,19 @@ def get_phase_tools(
         skill = next((s for s in get_enabled_user_skills() if s['id'] == skill_id), None)
         return f"## User Attack Skill: {skill['name']}\n\n{skill['content']}" if skill else None
 
-    # Add phase and ATTACK PATH specific workflow guidance
-    if phase == "informational":
-        # Dynamic tool descriptions (only shows allowed tools)
-        parts.append(build_informational_tool_descriptions(allowed_tools))
-
-        # Inject user skill content for skill-specific recon guidance
-        user_skill_content = _resolve_user_skill()
-        if user_skill_content:
-            parts.append(
-                user_skill_content + "\n\n"
-                "**Current phase is informational.** Follow the skill's reconnaissance "
-                "steps to gather target info, then request transition to exploitation."
-            )
-
-    elif phase == "exploitation":
-        # Check which built-in skills are enabled
+    # Helper: inject built-in skill workflow prompts (used in both informational and exploitation)
+    def _inject_builtin_skill_workflow() -> bool:
+        """Inject skill-specific workflow if attack_path_type matches an enabled built-in skill.
+        Returns True if a workflow was injected, False otherwise."""
         from project_settings import get_enabled_builtin_skills
         enabled_builtins = get_enabled_builtin_skills()
 
-        # SELECT WORKFLOW BASED ON ATTACK SKILL TYPE
         if (attack_path_type == "brute_force_credential_guess"
                 and "brute_force_credential_guess" in enabled_builtins
                 and "execute_hydra" in allowed_tools
                 and not (get_setting('ROE_ENABLED', False) and not get_setting('ROE_ALLOW_ACCOUNT_LOCKOUT', False))):
             # Hydra-based brute force workflow
             hydra_flags = get_hydra_flags_from_settings()
-            # Build flags without -t for templates that override thread count per protocol
             import re as _re
             hydra_flags_no_t = _re.sub(r'-t\s+\d+\s*', '', hydra_flags).strip()
             parts.append(HYDRA_BRUTE_FORCE_TOOLS.format(
@@ -229,26 +222,23 @@ def get_phase_tools(
                 hydra_flags=hydra_flags,
                 hydra_flags_no_t=hydra_flags_no_t
             ))
-            # Add wordlist reference guide
             parts.append(HYDRA_WORDLIST_GUIDANCE)
+            return True
         elif (attack_path_type == "phishing_social_engineering"
                 and "phishing_social_engineering" in enabled_builtins
                 and not (get_setting('ROE_ENABLED', False) and not get_setting('ROE_ALLOW_SOCIAL_ENGINEERING', False))):
-            # Phishing / Social Engineering workflow
             parts.append(PHISHING_SOCIAL_ENGINEERING_TOOLS)
             parts.append(PHISHING_PAYLOAD_FORMAT_GUIDANCE)
-            # Inject SMTP config only for phishing path (saves tokens for other paths)
             smtp_config = get_setting('PHISHING_SMTP_CONFIG', '')
             if smtp_config:
                 parts.append(
                     f"## Pre-Configured SMTP Settings\n\n"
                     f"Use these for email delivery via execute_code (Python smtplib):\n{smtp_config}\n"
                 )
+            return True
         elif (attack_path_type == "denial_of_service"
                 and "denial_of_service" in enabled_builtins
                 and not (get_setting('ROE_ENABLED', False) and not get_setting('ROE_ALLOW_DOS', False))):
-            # Denial of Service workflow — inject DoS settings into prompt templates
-            # Blocked when RoE is enabled AND DoS is prohibited (falls to unclassified)
             dos_settings = get_dos_settings_dict()
             assessment_only = get_setting('DOS_ASSESSMENT_ONLY', False)
             dos_assessment_block = (
@@ -266,33 +256,64 @@ def get_phase_tools(
             ))
             parts.append(DOS_VECTOR_SELECTION.format(**dos_settings))
             parts.append(DOS_VERIFICATION_GUIDE)
-        elif attack_path_type.startswith("user_skill:"):
-            # User-uploaded attack skill — inject its .md content as workflow
-            user_skill_content = _resolve_user_skill()
-            if user_skill_content:
-                parts.append(user_skill_content)
-            else:
-                parts.append(UNCLASSIFIED_EXPLOIT_TOOLS)  # fallback
-        elif attack_path_type.endswith("-unclassified"):
-            # Generic unclassified workflow — no specific tool workflow
-            parts.append(UNCLASSIFIED_EXPLOIT_TOOLS)
-        elif ("cve_exploit" in enabled_builtins
+            return True
+        elif (attack_path_type == "sql_injection"
+                and "sql_injection" in enabled_builtins
+                and "kali_shell" in allowed_tools):
+            sqli_settings = {
+                'sqli_level': get_setting('SQLI_LEVEL', 1),
+                'sqli_risk': get_setting('SQLI_RISK', 1),
+                'sqli_tamper_scripts': get_setting('SQLI_TAMPER_SCRIPTS', '') or 'none configured',
+            }
+            parts.append(SQLI_TOOLS.format(**sqli_settings))
+            parts.append(SQLI_OOB_WORKFLOW)
+            parts.append(SQLI_PAYLOAD_REFERENCE)
+            return True
+        elif ("cve_exploit" == attack_path_type
+                and "cve_exploit" in enabled_builtins
                 and "metasploit_console" in allowed_tools):
-            # CVE-based exploitation (default)
             parts.append(CVE_EXPLOIT_TOOLS)
-            # Select payload guidance based on post_expl_type
             payload_guidance = CVE_PAYLOAD_GUIDANCE_STATEFULL if is_statefull else CVE_PAYLOAD_GUIDANCE_STATELESS
             parts.append(payload_guidance)
-            # No-module fallback: only inject full workflow AFTER msf search returned no results
-            # This saves ~1,100-1,350 tokens when a module IS found
             if _msf_search_failed(execution_trace or []):
                 if is_statefull:
                     parts.append(NO_MODULE_FALLBACK_STATEFULL)
                 else:
                     parts.append(NO_MODULE_FALLBACK_STATELESS)
+            return True
+        return False
+
+    # Add phase and ATTACK PATH specific workflow guidance
+    if phase == "informational":
+        # Dynamic tool descriptions (only shows allowed tools)
+        parts.append(build_informational_tool_descriptions(allowed_tools))
+
+        # Inject skill workflow — built-in skills get their full prompt from the start,
+        # just like user skills. The workflow itself contains recon steps (Step 1: Target Analysis etc.)
+        user_skill_content = _resolve_user_skill()
+        if user_skill_content:
+            parts.append(
+                user_skill_content + "\n\n"
+                "**Current phase is informational.** Follow the skill's reconnaissance "
+                "steps to gather target info, then request transition to exploitation."
+            )
         else:
-            # No exploitation tools available or skill disabled — show only informational tool descriptions
-            parts.append(build_informational_tool_descriptions(allowed_tools))
+            _inject_builtin_skill_workflow()
+
+    elif phase == "exploitation":
+        # SELECT WORKFLOW BASED ON ATTACK SKILL TYPE
+        if not _inject_builtin_skill_workflow():
+            # No built-in skill matched — check user skills and unclassified
+            if attack_path_type.startswith("user_skill:"):
+                user_skill_content = _resolve_user_skill()
+                if user_skill_content:
+                    parts.append(user_skill_content)
+                else:
+                    parts.append(UNCLASSIFIED_EXPLOIT_TOOLS)
+            elif attack_path_type.endswith("-unclassified"):
+                parts.append(UNCLASSIFIED_EXPLOIT_TOOLS)
+            else:
+                parts.append(build_informational_tool_descriptions(allowed_tools))
 
         # Add note about post-exploitation availability
         if not activate_post_expl:
@@ -361,6 +382,10 @@ __all__ = [
     "DOS_TOOLS",
     "DOS_VECTOR_SELECTION",
     "DOS_VERIFICATION_GUIDE",
+    # SQL Injection
+    "SQLI_TOOLS",
+    "SQLI_OOB_WORKFLOW",
+    "SQLI_PAYLOAD_REFERENCE",
     # Unclassified attack path
     "UNCLASSIFIED_EXPLOIT_TOOLS",
     # Post-exploitation

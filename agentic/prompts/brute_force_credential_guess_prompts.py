@@ -68,6 +68,9 @@ Look for keywords like:
 2. Or use naabu with service detection: `-host <ip> -p <port> -json`
 3. Check SSH banner if targeting SSH (often reveals OS)
 
+**After Step 0, request `transition_phase` to exploitation before proceeding to Step 1.**
+This unlocks `execute_hydra` and ensures findings are tracked correctly.
+
 ### Step 1: Select Hydra Protocol
 
 Based on the target service, select the correct Hydra protocol string:

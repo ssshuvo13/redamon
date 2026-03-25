@@ -37,18 +37,25 @@ _DOS_SECTION = """### denial_of_service
 - Keywords: dos, denial of service, crash, disrupt, availability, slowloris, flood, exhaust, stress test, take down, knock offline, overwhelm
 """
 
+_SQLI_SECTION = """### sql_injection — SQL Injection
+- SQL injection testing against web applications using SQLMap and manual techniques
+- Includes: error-based, union-based, blind boolean, blind time-based, out-of-band (OOB/DNS exfiltration)
+- Key distinction: injecting SQL into application parameters to extract data or gain access
+- Keywords: SQL injection, SQLi, sqlmap, database dump, union select, blind injection, WAF bypass, authentication bypass
+"""
+
 _UNCLASSIFIED_SECTION = """### <descriptive_term>-unclassified
 - ANY exploitation request that does NOT clearly fit the enabled attack skills above
 - The agent has no specialized workflow for these — it will use available tools generically
 - **Key distinction from phishing:** the attacker directly interacts with a SERVICE/APPLICATION, NOT generating a payload for a target user to execute
-  - "Try SQL injection on the web app" → unclassified (attacker sends crafted input to a web service)
+  - "Test for SSRF on the API" → unclassified (attacker sends crafted input to a web service)
   - "Generate a reverse shell payload" → phishing (attacker creates a file for a target user to execute)
+- **Key distinction from sql_injection:** if the request is specifically about SQL injection, use the `sql_injection` skill instead
 - You MUST create a short, descriptive snake_case term followed by "-unclassified"
 - Format: `<term>-unclassified` where term is 1-4 lowercase words joined by underscores
-- Example values: "sql_injection-unclassified", "ssrf-unclassified", "xss-unclassified", "file_upload-unclassified", "directory_traversal-unclassified"
-- Keywords: SQL injection, XSS, cross-site scripting, directory traversal, path traversal, SSRF, file upload, command injection, LFI, RFI, deserialization, XXE, privilege escalation
+- Example values: "ssrf-unclassified", "xss-unclassified", "file_upload-unclassified", "directory_traversal-unclassified"
+- Keywords: XSS, cross-site scripting, directory traversal, path traversal, SSRF, file upload, command injection, LFI, RFI, deserialization, XXE, privilege escalation
 - Example requests:
-  - "Try SQL injection on the web app" -> "sql_injection-unclassified"
   - "Test for SSRF on the API" -> "ssrf-unclassified"
   - "Try to upload a web shell" -> "file_upload-unclassified"
   - "Test for XSS on the login page" -> "xss-unclassified"
@@ -62,29 +69,30 @@ _BUILTIN_SKILL_MAP = {
     'brute_force_credential_guess': (_BRUTE_FORCE_SECTION, 'b', 'brute_force_credential_guess'),
     'cve_exploit': (_CVE_EXPLOIT_SECTION, 'c', 'cve_exploit'),
     'denial_of_service': (_DOS_SECTION, 'd', 'denial_of_service'),
+    'sql_injection': (_SQLI_SECTION, 'e', 'sql_injection'),
 }
 
-# Priority order for built-in classification instructions
-_PRIORITY_INSTRUCTIONS = {
-    'phishing_social_engineering': """   {letter}. **phishing_social_engineering** (check FIRST — highest priority):
+# Classification instructions for built-in skills (no priority — best match wins)
+_CLASSIFICATION_INSTRUCTIONS = {
+    'phishing_social_engineering': """   - **phishing_social_engineering**:
       - Is the request asking to GENERATE, CREATE, or SET UP a payload, malicious file, document, backdoor, reverse shell, one-liner, or delivery server?
       - Will the output be something a target user must execute, open, click, or install on their machine?
       - Does it mention msfvenom, handler, multi/handler, web delivery, HTA server, encoding for AV evasion?
-      - Does it mention sending something via email to a target person?
-      - If YES to any → "phishing_social_engineering" """,
-    'brute_force_credential_guess': """   {letter}. **brute_force_credential_guess**:
+      - Does it mention sending something via email to a target person?""",
+    'brute_force_credential_guess': """   - **brute_force_credential_guess**:
       - Does the request mention password guessing, brute force, credential attacks, wordlists, or dictionary attacks?
-      - Does it target a login service (SSH, FTP, MySQL, etc.) with credential-based attack?
-      - If YES → "brute_force_credential_guess" """,
-    'cve_exploit': """   {letter}. **cve_exploit**:
+      - Does it target a login service (SSH, FTP, MySQL, etc.) with credential-based attack?""",
+    'cve_exploit': """   - **cve_exploit**:
       - Does the request mention a specific CVE ID or Metasploit exploit module to use DIRECTLY against a service?
-      - Does it describe exploiting a service vulnerability where NO target user interaction is needed?
-      - If YES → "cve_exploit" """,
-    'denial_of_service': """   {letter}. **denial_of_service**:
+      - Does it describe exploiting a service vulnerability where NO target user interaction is needed?""",
+    'denial_of_service': """   - **denial_of_service**:
       - Is the goal to DISRUPT, CRASH, or make a service UNAVAILABLE (not to gain access)?
       - Does it mention DoS, denial of service, flooding, slowloris, stress test, take down, exhaust resources?
-      - Is the user NOT trying to get a shell, steal data, or obtain credentials?
-      - If YES → "denial_of_service" """,
+      - Is the user NOT trying to get a shell, steal data, or obtain credentials?""",
+    'sql_injection': """   - **sql_injection**:
+      - Does the request mention SQL injection, SQLi, database dumping, or union/blind injection?
+      - Does it target a web application parameter with SQL-specific attack intent?
+      - Does it mention sqlmap, WAF bypass for SQL, authentication bypass via SQL, or OOB/DNS exfiltration?""",
 }
 
 
@@ -148,7 +156,7 @@ def build_classification_prompt(objective: str) -> str:
     parts.append("## Attack Skill Types (ONLY for exploitation phase)\n")
 
     # Built-in skills (only enabled ones)
-    for skill_id in ['phishing_social_engineering', 'brute_force_credential_guess', 'cve_exploit', 'denial_of_service']:
+    for skill_id in ['phishing_social_engineering', 'brute_force_credential_guess', 'cve_exploit', 'denial_of_service', 'sql_injection']:
         if skill_id in enabled_builtins:
             section_text, _, _ = _BUILTIN_SKILL_MAP[skill_id]
             parts.append(section_text)
@@ -174,42 +182,38 @@ def build_classification_prompt(objective: str) -> str:
                  '   - Is this a reconnaissance/information gathering request? -> "informational"\n'
                  '   - Is this an active attack/exploitation request? -> "exploitation"\n')
 
-    parts.append("2. If exploitation, determine the ATTACK SKILL TYPE using this priority order:")
+    parts.append("2. Determine the AGENT SKILL TYPE that **best matches** the request — regardless of phase. "
+                 "Even informational requests have a skill type (e.g., 'scan for SQLi' → sql_injection, "
+                 "'brute force SSH' → brute_force_credential_guess). Pick the one whose criteria fit most closely:\n")
 
-    # Build priority list dynamically
-    letter = ord('a')
-    priority_order = ['phishing_social_engineering', 'brute_force_credential_guess', 'cve_exploit', 'denial_of_service']
-    for skill_id in priority_order:
+    # Built-in skill classification criteria
+    builtin_skill_ids = ['phishing_social_engineering', 'brute_force_credential_guess', 'cve_exploit', 'denial_of_service', 'sql_injection']
+    for skill_id in builtin_skill_ids:
         if skill_id in enabled_builtins:
-            instruction = _PRIORITY_INSTRUCTIONS[skill_id].format(letter=chr(letter))
-            parts.append(instruction)
-            letter += 1
+            parts.append(_CLASSIFICATION_INSTRUCTIONS[skill_id])
 
-    # User skills classification instructions
+    # User skills classification criteria
     for skill in enabled_user_skills:
-        parts.append(f'   {chr(letter)}. **user_skill:{skill["id"]}** ("{skill["name"]}"):\n'
-                     f'      - Does the request match the workflow described in the "{skill["name"]}" skill?\n'
-                     f'      - If YES → "user_skill:{skill["id"]}"')
-        letter += 1
+        parts.append(f'   - **user_skill:{skill["id"]}** ("{skill["name"]}"):\n'
+                     f'      - Does the request match the workflow described in the "{skill["name"]}" skill?')
 
-    # Unclassified + default
-    parts.append(f"   {chr(letter)}. **<descriptive_term>-unclassified**:\n"
-                 "      - Does the request describe a specific attack technique where the attacker directly interacts with a service?\n"
-                 '      - If YES → "<descriptive_term>-unclassified"')
-    letter += 1
-    default_type = "cve_exploit" if "cve_exploit" in enabled_builtins else "<descriptive_term>-unclassified"
-    parts.append(f'   {chr(letter)}. Default to "{default_type}" if truly unclear (e.g., vague "hack the target")\n')
+    # Unclassified
+    parts.append("   - **<descriptive_term>-unclassified**:\n"
+                 "      - Does the request describe a specific attack technique that doesn't match any of the above?\n"
+                 "      - For general reconnaissance with no specific attack intent (e.g., 'show attack surface', "
+                 "'what vulnerabilities exist'), use **recon-unclassified**")
 
-    parts.append('3. If informational, set attack_path_type to "cve_exploit" (default, won\'t be used)\n')
+    default_type = "cve_exploit" if "cve_exploit" in enabled_builtins else "recon-unclassified"
+    parts.append(f'\n   If truly unclear (e.g., vague "hack the target"), default to "{default_type}".\n')
 
-    parts.append("4. Extract TARGET HINTS from the request (best-effort, used for graph linking):\n"
+    parts.append("3. Extract TARGET HINTS from the request (best-effort, used for graph linking):\n"
                  '   - target_host: IP address or hostname mentioned (e.g., "10.0.0.5", "www.example.com"). null if none found.\n'
                  '   - target_port: port number mentioned (e.g., 8080, 443). null if none found.\n'
                  '   - target_cves: list of CVE IDs mentioned (e.g., ["CVE-2021-41773"]). Empty list if none found.\n')
 
     # --- Build valid attack_path_type values for JSON schema ---
     valid_types = []
-    for skill_id in priority_order:
+    for skill_id in builtin_skill_ids:
         if skill_id in enabled_builtins:
             valid_types.append(f'"{skill_id}"')
     for skill in enabled_user_skills:
@@ -233,8 +237,9 @@ def build_classification_prompt(objective: str) -> str:
 
 Notes:
 - `required_phase` determines if this is reconnaissance ("informational") or active attack ("exploitation")
-- `attack_path_type` is only relevant when required_phase is "exploitation"
-- For unclassified paths, the term MUST be lowercase snake_case followed by "-unclassified" (e.g., "sql_injection-unclassified")
+- `attack_path_type` MUST always be set — it identifies which agent skill workflow to use, regardless of phase
+- For general recon with no specific attack technique, use "recon-unclassified"
+- For unclassified attack techniques, use a descriptive term followed by "-unclassified" (e.g., "xss-unclassified")
 - `detected_service` should only be set for brute_force_credential_guess, null otherwise
 - `confidence` should be 0.9+ if the intent is very clear, 0.6-0.8 if somewhat ambiguous
 - `target_host`, `target_port`, `target_cves` are best-effort extraction — null/empty if not mentioned""")

@@ -2,13 +2,14 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import Link from 'next/link'
-import { ChevronDown, Bug, KeyRound, Mail, Swords, Loader2, Settings, Zap } from 'lucide-react'
+import { ChevronDown, Bug, KeyRound, Mail, Swords, Loader2, Settings, Zap, Database } from 'lucide-react'
 import type { Project } from '@prisma/client'
 import { useProject } from '@/providers/ProjectProvider'
 import { Toggle } from '@/components/ui/Toggle/Toggle'
 import { HydraSection } from './BruteForceSection'
 import { PhishingSection } from './PhishingSection'
 import { DosSection } from './DosSection'
+import { SqliSection } from './SqliSection'
 import styles from '../ProjectForm.module.css'
 
 type FormData = Omit<Project, 'id' | 'userId' | 'createdAt' | 'updatedAt' | 'user'>
@@ -40,6 +41,12 @@ const BUILT_IN_SKILLS: BuiltInSkillDef[] = [
     icon: <Bug size={16} />,
   },
   {
+    id: 'sql_injection',
+    name: 'SQL Injection',
+    description: 'SQL injection testing with SQLMap, WAF bypass, blind injection, and OOB DNS exfiltration',
+    icon: <Database size={16} />,
+  },
+  {
     id: 'brute_force_credential_guess',
     name: 'Credential Testing',
     description: 'Credential policy validation using Hydra against login services',
@@ -67,6 +74,7 @@ type AttackSkillConfig = {
 const DEFAULT_CONFIG: AttackSkillConfig = {
   builtIn: {
     cve_exploit: true,
+    sql_injection: true,
     brute_force_credential_guess: false,
     phishing_social_engineering: false,
     denial_of_service: false,
@@ -215,6 +223,9 @@ export function AttackSkillsSection({ data, updateField }: AttackSkillsSectionPr
                   )}
                   {enabled && skill.id === 'denial_of_service' && (
                     <DosSection data={data} updateField={updateField} />
+                  )}
+                  {enabled && skill.id === 'sql_injection' && (
+                    <SqliSection data={data} updateField={updateField} />
                   )}
                 </div>
               )

@@ -26,6 +26,9 @@ and delivering them to the target. Do NOT switch to other attack chain unless th
 Complete these steps in order. Choose the DELIVERY METHOD that best matches the objective,
 then follow the corresponding sub-workflow.
 
+**Before generating payloads or setting up handlers: request `transition_phase` to exploitation.**
+This unlocks `metasploit_console` and `kali_shell` (msfvenom) and ensures findings are tracked correctly.
+
 ### Step 1: Determine Target Platform and Delivery Method
 
 **Ask the user (if not clear from the objective) via action="ask_user":**

@@ -47,6 +47,9 @@ Track attempts in your TODO list.
 
 ## MANDATORY DoS WORKFLOW
 
+**Before starting: request `transition_phase` to exploitation.**
+This unlocks DoS tools (metasploit_console, kali_shell for hping3/slowhttptest) and ensures findings are tracked correctly.
+
 ### Step 1: Select DoS Vector AND Tool
 
 Based on informational phase intelligence, pick BOTH the technique AND the optimal tool.

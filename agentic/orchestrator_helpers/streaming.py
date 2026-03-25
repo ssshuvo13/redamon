@@ -124,22 +124,12 @@ async def emit_streaming_events(state: dict, callback) -> None:
                 await callback.on_question_request(pending)
                 callback._emitted_question_key = question_key
 
-        # Tool confirmation request — dedup via callback
-        # Also skip when tool_confirmation_response is already set (user already
-        # responded) — on resume the first yield still has the stale checkpoint
-        # fields but the response is merged in from update_data.
-        if (state.get("awaiting_tool_confirmation")
-                and state.get("tool_confirmation_pending")
-                and not state.get("tool_confirmation_response")):
-            pending = state["tool_confirmation_pending"]
-            conf_key = pending.get("confirmation_id", "")
-            if callback._emitted_tool_confirmation_key != conf_key:
-                await callback.on_tool_confirmation_request(pending)
-                callback._emitted_tool_confirmation_key = conf_key
-
         # 1. Emit tool_complete for PREVIOUS completed step (if any)
-        #    This MUST come before thinking, so the frontend sees:
-        #    tool_complete → thinking → tool_start (correct timeline order)
+        #    This MUST come before thinking AND tool confirmation, so the frontend
+        #    sees: tool_complete → thinking → tool_confirmation/tool_start
+        #    Without this order, a confirmation request for the next tool arrives
+        #    while the previous tool card is still 'running', causing it to be
+        #    overwritten by the confirmation handler's findIndex(tool_name + running).
         if "_completed_step" in state and state["_completed_step"]:
             cstep = state["_completed_step"]
             cstep_id = _make_event_id("tc", cstep, "tool_name", "output_analysis")
@@ -192,7 +182,7 @@ async def emit_streaming_events(state: dict, callback) -> None:
         #    Skip if tool confirmation is pending — tool hasn't actually started yet
         if "_current_step" in state and state["_current_step"] and not state.get("awaiting_tool_confirmation"):
             step = state["_current_step"]
-            start_id = _make_event_id("ts", step, "tool_name")
+            start_id = _make_event_id("ts", step, "tool_name", "tool_args")
             output_id = _make_event_id("to", step, "tool_name", "tool_output")
 
             # Emit tool start
@@ -214,6 +204,19 @@ async def emit_streaming_events(state: dict, callback) -> None:
 
             # NOTE: tool_complete for current step will be emitted via _completed_step
             # in the NEXT think iteration
+
+        # 4. Tool confirmation request — AFTER tool_complete and thinking
+        #    Dedup via callback. Skip when tool_confirmation_response is already set
+        #    (user already responded) — on resume the first yield still has the stale
+        #    checkpoint fields but the response is merged in from update_data.
+        if (state.get("awaiting_tool_confirmation")
+                and state.get("tool_confirmation_pending")
+                and not state.get("tool_confirmation_response")):
+            pending = state["tool_confirmation_pending"]
+            conf_key = pending.get("confirmation_id", "")
+            if callback._emitted_tool_confirmation_key != conf_key:
+                await callback.on_tool_confirmation_request(pending)
+                callback._emitted_tool_confirmation_key = conf_key
 
         # Task complete - only emit AFTER generate_response_node has finished
         if state.get("task_complete") and state.get("_report_generated"):

@@ -165,6 +165,12 @@ const KNOWN_ATTACK_PATH_CONFIG: Record<string, { label: string; shortLabel: stri
     color: 'var(--status-error, #ef4444)',
     bgColor: 'rgba(239, 68, 68, 0.15)',
   },
+  sql_injection: {
+    label: 'SQL Injection',
+    shortLabel: 'SQLi',
+    color: 'var(--accent-info, #06b6d4)',
+    bgColor: 'rgba(6, 182, 212, 0.15)',
+  },
 }
 
 /** Derive display config for any attack skill type (known, user, or unclassified). */

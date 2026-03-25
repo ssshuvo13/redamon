@@ -12,6 +12,11 @@ const BUILT_IN_SKILLS = [
     description: 'Exploit known CVEs using Metasploit Framework modules against target services',
   },
   {
+    id: 'sql_injection',
+    name: 'SQL Injection',
+    description: 'SQL injection testing with SQLMap, WAF bypass, blind injection, and OOB DNS exfiltration',
+  },
+  {
     id: 'brute_force_credential_guess',
     name: 'Credential Testing',
     description: 'Credential policy validation using Hydra against login services',

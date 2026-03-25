@@ -7,6 +7,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [3.1.0] - 2026-03-25
+
+### Added
+
+- **SQL Injection Agent Skill** (`sql_injection`) — new built-in agent skill for SQL injection testing, replacing the previous `sql_injection-unclassified` fallback with a structured 7-step workflow:
+  - **Step 1**: Target analysis via `execute_curl` (identify parameters, technology stack, DBMS hints)
+  - **Step 2**: SQLMap detection scan via `kali_shell` with configurable level (1-5) and risk (1-3)
+  - **Step 3**: WAF detection and bypass with tamper script recommendations per WAF type
+  - **Step 4**: Exploitation based on detected technique (error-based, union, blind boolean, blind time-based, OOB)
+  - **Step 5**: Long scan mode for complex targets (background sqlmap + polling)
+  - **Step 6**: Prioritized data extraction (banner → user → databases → tables → dump)
+  - **Step 7**: Post-SQLi escalation (file read/write, OS shell, SQL shell)
+  - **OOB DNS exfiltration** workflow via `interactsh-client` (background process with stateful session)
+  - **Payload reference** tables: auth bypass payloads, WAF bypass encodings, tamper scripts, DBMS-specific error/time-based payloads
+  - **Configurable settings**: SQLMap level, risk, and tamper scripts in project settings UI
+  - **Classification wiring**: LLM classifier routes SQLi requests directly to the skill instead of unclassified fallback
+  - **Dockerfile**: Added `interactsh-client` (ProjectDiscovery) to kali-sandbox for OOB callback support
+  - **42 unit tests** covering state registration, classification, prompt formatting, activation logic, and tool registry
+
+- **Agent skill workflows injected from informational phase** — all built-in skill prompts (CVE, SQLi, Credential Testing, DoS, Social Engineering) are now injected from the start of a session, matching user skill behavior. Previously, skill workflows only appeared after transitioning to exploitation phase, causing the agent to improvise without guidance during recon.
+
+- **Phase transition guidance in skill prompts** — each built-in skill now includes an explicit instruction to request `transition_phase` to exploitation after initial recon, ensuring the agent moves through the phase model correctly.
+
+- **Improved classification for informational requests** — the LLM classifier now always determines the best-matching agent skill regardless of phase. Pure recon requests (e.g., "show attack surface") classify as `recon-unclassified` instead of defaulting to `cve_exploit`.
+
+### Fixed
+
+- **Duplicate tool widget replacement** — fixed a bug where the second call to the same tool (e.g., two `execute_curl` calls) would overwrite the first widget in the chat timeline. Root cause: streaming event dedup key only used `tool_name`, causing the second `tool_start` to be deduplicated away. Fix: include `tool_args` in the dedup key.
+
+- **Tool completion ordering** — fixed a race condition where `TOOL_CONFIRMATION_REQUEST` for the next tool arrived before `TOOL_COMPLETE` for the previous tool, causing the confirmation handler to overwrite the previous tool's widget. Fix: reordered streaming events so `tool_complete` always fires before `tool_confirmation`.
+
+---
+
 ## [3.0.0] - 2026-03-15
 
 ### Added

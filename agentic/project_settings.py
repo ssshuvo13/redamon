@@ -68,7 +68,7 @@ DEFAULT_AGENT_SETTINGS: dict[str, Any] = {
     'LLM_PARSE_MAX_RETRIES': 3,
 
     # Deep Think (Strategic Reasoning)
-    'DEEP_THINK_ENABLED': True,
+    'DEEP_THINK_ENABLED': False,
 
     # Debug
     'CREATE_GRAPH_IMAGE_ON_INIT': False,
@@ -121,6 +121,11 @@ DEFAULT_AGENT_SETTINGS: dict[str, Any] = {
     'DOS_CONCURRENT_CONNECTIONS': 1000, # Connections for app-layer DoS (slowloris etc.)
     'DOS_ASSESSMENT_ONLY': False,       # True = only check vulnerability, don't attack
 
+    # SQL Injection Testing
+    'SQLI_LEVEL': 1,                    # sqlmap --level (1-5, higher = more payloads/injection points)
+    'SQLI_RISK': 1,                     # sqlmap --risk (1-3, higher = more aggressive tests)
+    'SQLI_TAMPER_SCRIPTS': '',          # Comma-separated tamper scripts (e.g., "space2comment,randomcase")
+
     # Attack Skill Configuration
     'ATTACK_SKILL_CONFIG': {
         'builtIn': {
@@ -128,6 +133,7 @@ DEFAULT_AGENT_SETTINGS: dict[str, Any] = {
             'brute_force_credential_guess': False,
             'phishing_social_engineering': False,
             'denial_of_service': False,
+            'sql_injection': True,
         },
         'user': {},
     },

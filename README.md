@@ -339,7 +339,7 @@ Two-agent pipeline: a **Triage Agent** runs 9 hardcoded Cypher queries then uses
 
 ### Agent Skills
 
-An **LLM-powered Intent Router** classifies user requests into agent skills: CVE (MSF), Credential Testing, Social Engineering, Availability Testing, or custom user-defined skills uploaded as Markdown files.
+An **LLM-powered Intent Router** classifies user requests into agent skills: CVE (MSF), SQL Injection, Credential Testing, Social Engineering, Availability Testing, or custom user-defined skills uploaded as Markdown files.
 
 > **[Wiki: Agent Skills](https://github.com/samugit83/redamon/wiki/Attack-Skills)**
 

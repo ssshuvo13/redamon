@@ -2,12 +2,17 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import Image from 'next/image'
-import { ShieldAlert, ExternalLink, Star, Github } from 'lucide-react'
+import {
+  ShieldAlert, ExternalLink, Star, Github,
+  Rocket, UserPlus, FolderPlus,
+  Bot, Play, BookOpen,
+} from 'lucide-react'
 import {
   DISCLAIMER_VERSION,
   DISCLAIMER_STORAGE_KEY,
   DISCLAIMER_GITHUB_URL,
   REDAMON_GITHUB_URL,
+  WIKI_URL,
 } from '@/lib/disclaimerVersion'
 import styles from './DisclaimerGate.module.css'
 
@@ -56,7 +61,7 @@ const CHECKBOXES = [
 export function DisclaimerGate({ children }: DisclaimerGateProps) {
   const [isLoading, setIsLoading] = useState(true)
   const [isAccepted, setIsAccepted] = useState(false)
-  const [step, setStep] = useState<'welcome' | 'disclaimer'>('welcome')
+  const [step, setStep] = useState<'welcome' | 'disclaimer' | 'guide'>('welcome')
   const [checked, setChecked] = useState<boolean[]>(
     () => new Array(CHECKBOXES.length).fill(false)
   )
@@ -175,6 +180,96 @@ export function DisclaimerGate({ children }: DisclaimerGateProps) {
     )
   }
 
+  if (step === 'guide') {
+    return (
+      <div className={styles.overlay}>
+        <div className={styles.card}>
+          <div className={styles.header}>
+            <div className={styles.headerLeft}>
+              <Rocket size={20} className={styles.headerIcon} />
+              <h1 className={styles.title}>Getting Started — Your First Steps</h1>
+            </div>
+          </div>
+
+          <div className={styles.body}>
+            <div className={styles.guideGroups}>
+              {/* Setup group */}
+              <div className={styles.guideGroup}>
+                <p className={styles.guideGroupLabel}>Setup</p>
+                <div className={styles.guideSteps}>
+                  <div className={styles.guideStep}>
+                    <div className={styles.guideStepLeft}>
+                      <span className={styles.guideStepNum}>1</span>
+                      <UserPlus size={18} className={styles.guideStepIcon} />
+                    </div>
+                    <div>
+                      <p className={styles.guideStepTitle}>Create a User</p>
+                      <p className={styles.guideStepDesc}>Go to the Users panel and create your profile. Each user can manage multiple independent projects.</p>
+                    </div>
+                  </div>
+                  <div className={styles.guideStep}>
+                    <div className={styles.guideStepLeft}>
+                      <span className={styles.guideStepNum}>2</span>
+                      <FolderPlus size={18} className={styles.guideStepIcon} />
+                    </div>
+                    <div>
+                      <p className={styles.guideStepTitle}>Create a Project</p>
+                      <p className={styles.guideStepDesc}>Set up a project to group all recon data, settings, and agent sessions for a single engagement.</p>
+                    </div>
+                  </div>
+
+                </div>
+              </div>
+
+              {/* Run group */}
+              <div className={styles.guideGroup}>
+                <p className={styles.guideGroupLabel}>Run</p>
+                <div className={styles.guideSteps}>
+                  <div className={styles.guideStep}>
+                    <div className={styles.guideStepLeft}>
+                      <span className={styles.guideStepNum}>3</span>
+                      <Play size={18} className={styles.guideStepIcon} />
+                    </div>
+                    <div>
+                      <p className={styles.guideStepTitle}>Launch the Recon Pipeline</p>
+                      <p className={styles.guideStepDesc}>From the <strong>Red Zone</strong> press <strong>Start Recon</strong>. Wait for the pipeline to fully complete before starting the AI agent.</p>
+                    </div>
+                  </div>
+                  <div className={styles.guideStep}>
+                    <div className={styles.guideStepLeft}>
+                      <span className={styles.guideStepNum}>4</span>
+                      <Bot size={18} className={styles.guideStepIcon} />
+                    </div>
+                    <div>
+                      <p className={styles.guideStepTitle}>Start the AI Agent</p>
+                      <p className={styles.guideStepDesc}>Once recon is done, switch to <strong>Agent AI</strong> to interrogate findings, plan attack paths, and generate reports.</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className={styles.footer}>
+            <a
+              href={WIKI_URL}
+              target="_blank"
+              rel="noopener noreferrer"
+              className={styles.fullDisclaimerLink}
+            >
+              <BookOpen size={14} />
+              Read the complete manual on the Wiki
+              <ExternalLink size={12} />
+            </a>
+            <button className={styles.acceptButton} onClick={handleAccept}>
+              Let&apos;s Go →
+            </button>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className={styles.overlay}>
       <div className={styles.card}>
@@ -226,7 +321,7 @@ export function DisclaimerGate({ children }: DisclaimerGateProps) {
           <button
             className={styles.acceptButton}
             disabled={!allChecked}
-            onClick={handleAccept}
+            onClick={() => setStep('guide')}
           >
             I Accept All Terms
           </button>

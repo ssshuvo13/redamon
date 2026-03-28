@@ -83,6 +83,12 @@ RUN go install -v github.com/projectdiscovery/naabu/v2/cmd/naabu@latest \
     && go install -v github.com/projectdiscovery/nuclei/v3/cmd/nuclei@latest \
     && go install -v github.com/projectdiscovery/interactsh/cmd/interactsh-client@latest
 
+# Install API security testing tools (Go-based)
+# Source: https://github.com/ffuf/ffuf (MIT) - Fast web fuzzer
+# Source: https://github.com/projectdiscovery/httpx (MIT) - HTTP toolkit
+RUN go install -v github.com/ffuf/ffuf/v2@latest \
+    && go install -v github.com/projectdiscovery/httpx/cmd/httpx@latest
+
 # Update nuclei templates
 RUN nuclei -update-templates || true
 
@@ -93,6 +99,33 @@ ENV PATH="/opt/venv/bin:$PATH"
 # Install Python MCP dependencies
 COPY requirements.txt /tmp/requirements.txt
 RUN pip install --no-cache-dir -r /tmp/requirements.txt
+
+# Install API security testing tools (Python-based)
+# jwt_tool - JWT exploitation toolkit (alg:none, key confusion, cracking)
+# Source: https://github.com/ticarpi/jwt_tool (GPL-3.0)
+RUN pip install --no-cache-dir pycryptodomex termcolor ratelimit \
+    && git clone --depth 1 https://github.com/ticarpi/jwt_tool.git /opt/jwt_tool \
+    && chmod +x /opt/jwt_tool/jwt_tool.py \
+    && ln -s /opt/jwt_tool/jwt_tool.py /usr/local/bin/jwt_tool
+
+# graphql-cop - GraphQL security auditor
+# Source: https://github.com/dolevf/graphql-cop (BSD-3-Clause)
+RUN git clone --depth 1 https://github.com/dolevf/graphql-cop.git /opt/graphql-cop \
+    && pip install --no-cache-dir -r /opt/graphql-cop/requirements.txt \
+    && chmod +x /opt/graphql-cop/graphql-cop.py \
+    && ln -s /opt/graphql-cop/graphql-cop.py /usr/local/bin/graphql-cop
+
+# GraphQLmap - GraphQL exploitation engine
+# Source: https://github.com/swisskyrepo/GraphQLmap (MIT)
+# Note: Install via setup.py to get the 'graphqlmap' command. Skip readline
+# from requirements.txt as it fails on Python 3.13 (Linux Python has readline built-in)
+RUN git clone --depth 1 https://github.com/swisskyrepo/GraphQLmap.git /opt/graphqlmap \
+    && cd /opt/graphqlmap \
+    && pip install --no-cache-dir requests \
+    && pip install --no-cache-dir -e .
+
+# Remove Python httpx if installed as dependency (conflicts with ProjectDiscovery's Go httpx)
+RUN pip uninstall -y httpx 2>/dev/null || true
 
 # Create directories
 RUN mkdir -p /opt/mcp_servers /opt/output

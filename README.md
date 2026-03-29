@@ -154,14 +154,23 @@ All lifecycle management is handled by a single script:
 |---------|-------------|
 | `./redamon.sh install` | Build + start without GVM |
 | `./redamon.sh install --gvm` | Build + start with GVM/OpenVAS |
-| `./redamon.sh update` | Pull latest version, smart-rebuild only changed services |
+| **`./redamon.sh update`** | **Pull latest version, smart-rebuild only changed services** |
 | `./redamon.sh up` | Start services (auto-detects GVM mode) |
 | `./redamon.sh down` | Stop services (preserves data) |
 | `./redamon.sh status` | Show running services, version, GVM mode |
 | `./redamon.sh clean` | Remove containers + images, keep data |
 | `./redamon.sh purge` | Remove everything including all data |
 
-The `update` command pulls the latest code from GitHub, detects which Dockerfiles/source changed, rebuilds only the affected images, and restarts the updated services. Volumes (databases, scan results, reports) are never deleted.
+
+### Updating to a New Version
+
+Just run:
+
+```bash
+./redamon.sh update
+```
+
+The script pulls the latest code from GitHub, detects which Dockerfiles and source files changed, rebuilds only the affected images, and restarts the updated services. Your databases, scan results, and reports are preserved -- volumes are never deleted.
 
 The webapp also checks for updates automatically and shows a notification in the UI when a new version is available.
 
@@ -232,7 +241,6 @@ docker compose --profile tools down --rmi local --volumes --remove-orphans  # Fu
 - [System Architecture](#system-architecture)
 - [Components](#components)
 - [Documentation](#documentation)
-- [Updating to a New Version](#updating-to-a-new-version)
 - [Troubleshooting](#troubleshooting)
 - [Community Showcase](#community-showcase)
 - [Legal](#legal)
@@ -551,53 +559,6 @@ flowchart TB
 | Full Disclaimer | [DISCLAIMER.md](DISCLAIMER.md) |
 | Third-Party Licenses | [THIRD-PARTY-LICENSES.md](THIRD-PARTY-LICENSES.md) |
 | License | [LICENSE](LICENSE) |
-
----
-
-## Updating to a New Version
-
-When updating RedAmon, all Docker images and volumes are rebuilt from scratch. Follow these steps to preserve your data.
-
-> **Warning**: Step 4 removes all database volumes. Any data not exported will be permanently lost.
-
-**1. Export all projects** — go to each project's Settings and click Export to download backup ZIPs.
-
-**2. Stop all containers:**
-```bash
-docker compose down
-```
-
-**3. Pull the latest version:**
-```bash
-git pull origin master
-```
-
-**4. Remove old images, containers, and volumes:**
-```bash
-docker compose down --rmi all --volumes
-```
-
-**5. Rebuild everything:**
-```bash
-docker compose build --no-cache
-docker compose --profile tools build --no-cache
-```
-
-**6. Remove dangling images left by the rebuild:**
-```bash
-docker image prune -f
-```
-
-**7. Start the new version:**
-```bash
-# Full stack (with GVM):
-docker compose up -d
-
-# Core services only (without GVM):
-docker compose up -d postgres neo4j recon-orchestrator kali-sandbox agent webapp
-```
-
-**8. Import your projects** — open http://localhost:3000, create/select a user, and import each ZIP.
 
 ---
 

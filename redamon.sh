@@ -110,11 +110,10 @@ remove_redamon_images() {
 }
 
 pull_gvm_images() {
-    # GVM images are large (~250MB each) and the Greenbone registry can be
-    # unreliable, causing "unexpected EOF" on long downloads. Pull them
-    # individually with retries so a single network hiccup doesn't abort
-    # the entire startup.
-    local max_retries=3
+    # GVM images are large (~250MB each) and can fail with "unexpected EOF"
+    # due to a known Docker+Go 1.24 bug (moby/moby#49513) and Greenbone
+    # registry instability. Pull individually with retries.
+    local max_retries=5
     local gvm_services
     gvm_services=$(docker compose config --services 2>/dev/null | grep '^gvm-')
 
@@ -132,7 +131,7 @@ pull_gvm_images() {
             fi
             if [[ $attempt -lt $max_retries ]]; then
                 warn "Pull failed for $svc (attempt $attempt/$max_retries), retrying..."
-                sleep 3
+                sleep 5
             fi
             ((attempt++))
         done
@@ -159,7 +158,10 @@ pull_gvm_images() {
 
     if [[ ${#failed[@]} -gt 0 ]]; then
         error "Failed to pull after $max_retries attempts: ${failed[*]}"
-        error "Check your network connection and try again."
+        echo ""
+        echo -e "  ${YELLOW}This is often caused by a Docker+Go 1.24 bug (moby/moby#49513).${NC}"
+        echo -e "  ${YELLOW}Try: echo '{\"max-concurrent-downloads\":1}' | sudo tee /etc/docker/daemon.json${NC}"
+        echo -e "  ${YELLOW}Then: sudo systemctl restart docker && ./redamon.sh up${NC}"
         exit 1
     fi
     success "All GVM images pulled successfully."

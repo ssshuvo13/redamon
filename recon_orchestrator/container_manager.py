@@ -927,6 +927,14 @@ class ContainerManager:
         """Get count of running GVM scan processes"""
         return sum(1 for s in self.gvm_states.values() if s.status == GvmStatus.RUNNING)
 
+    def is_gvm_available(self) -> bool:
+        """Check if GVM stack is installed by looking for the gvmd container"""
+        try:
+            container = self.client.containers.get("redamon-gvm-gvmd")
+            return container.status == "running"
+        except Exception:
+            return False
+
     # =========================================================================
     # GitHub Secret Hunt Container Lifecycle
     # =========================================================================

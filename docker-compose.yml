@@ -71,7 +71,7 @@ services:
   # --- Data containers (init-only, exit after populating volumes) ---
 
   gvm-vt:
-    image: registry.community.greenbone.net/community/vulnerability-tests
+    image: registry.community.greenbone.net/community/vulnerability-tests:22.4
     container_name: redamon-gvm-vt
     environment:
       FEED_RELEASE: "24.10"
@@ -79,25 +79,25 @@ services:
       - vt_data:/mnt
 
   gvm-notus-data:
-    image: registry.community.greenbone.net/community/notus-data
+    image: registry.community.greenbone.net/community/notus-data:22.4
     container_name: redamon-gvm-notus-data
     volumes:
       - notus_data:/mnt
 
   gvm-scap-data:
-    image: registry.community.greenbone.net/community/scap-data
+    image: registry.community.greenbone.net/community/scap-data:22.4
     container_name: redamon-gvm-scap-data
     volumes:
       - scap_data:/mnt
 
   gvm-cert-bund-data:
-    image: registry.community.greenbone.net/community/cert-bund-data
+    image: registry.community.greenbone.net/community/cert-bund-data:22.4
     container_name: redamon-gvm-cert-data
     volumes:
       - cert_data:/mnt
 
   gvm-dfn-cert-data:
-    image: registry.community.greenbone.net/community/dfn-cert-data
+    image: registry.community.greenbone.net/community/dfn-cert-data:22.4
     container_name: redamon-gvm-dfn-cert
     volumes:
       - cert_data:/mnt
@@ -105,7 +105,7 @@ services:
       - gvm-cert-bund-data
 
   gvm-data-objects:
-    image: registry.community.greenbone.net/community/data-objects
+    image: registry.community.greenbone.net/community/data-objects:22.4
     container_name: redamon-gvm-data-objects
     environment:
       FEED_RELEASE: "24.10"
@@ -113,7 +113,7 @@ services:
       - data_objects:/mnt
 
   gvm-report-formats:
-    image: registry.community.greenbone.net/community/report-formats
+    image: registry.community.greenbone.net/community/report-formats:22.4
     container_name: redamon-gvm-report-formats
     environment:
       FEED_RELEASE: "24.10"
@@ -123,7 +123,7 @@ services:
       - gvm-data-objects
 
   gvm-gpg-data:
-    image: registry.community.greenbone.net/community/gpg-data
+    image: registry.community.greenbone.net/community/gpg-data:22.4
     container_name: redamon-gvm-gpg-data
     volumes:
       - gpg_data:/mnt
@@ -131,7 +131,7 @@ services:
   # --- GVM runtime services ---
 
   gvm-redis:
-    image: registry.community.greenbone.net/community/redis-server
+    image: registry.community.greenbone.net/community/redis-server:22.4
     container_name: redamon-gvm-redis
     restart: on-failure
     volumes:
@@ -146,7 +146,7 @@ services:
     entrypoint: ["/bin/sh", "-c", "rm -f /var/run/postgresql/.s.PGSQL.5432.lock /var/run/postgresql/.s.PGSQL.5432 /var/lib/postgresql/17/main/postmaster.pid && echo 'Cleaned stale PG locks'"]
 
   gvm-postgres:
-    image: registry.community.greenbone.net/community/pg-gvm:stable
+    image: registry.community.greenbone.net/community/pg-gvm:22.4
     container_name: redamon-gvm-postgres
     restart: on-failure
     volumes:
@@ -157,7 +157,7 @@ services:
         condition: service_completed_successfully
 
   gvmd:
-    image: registry.community.greenbone.net/community/gvmd:stable
+    image: registry.community.greenbone.net/community/gvmd:22.4
     container_name: redamon-gvm-gvmd
     restart: on-failure
     volumes:
@@ -185,7 +185,7 @@ services:
         condition: service_completed_successfully
 
   gvm-ospd:
-    image: registry.community.greenbone.net/community/ospd-openvas:stable
+    image: registry.community.greenbone.net/community/ospd-openvas:22.4
     container_name: redamon-gvm-ospd
     restart: on-failure
     cap_add:

@@ -42,6 +42,7 @@ export default function GraphPage() {
   const [hasGvmData, setHasGvmData] = useState(false)
   const [hasGithubHuntData, setHasGithubHuntData] = useState(false)
   const [hasTrufflehogData, setHasTrufflehogData] = useState(false)
+  const [gvmAvailable, setGvmAvailable] = useState(true)
   const [isOtherScansModalOpen, setIsOtherScansModalOpen] = useState(false)
   const [hasGithubToken, setHasGithubToken] = useState(false)
   const [graphStats, setGraphStats] = useState<{ totalNodes: number; nodesByType: Record<string, number> } | null>(null)
@@ -75,6 +76,14 @@ export default function GraphPage() {
     window.addEventListener('resize', update)
     return () => { ro.disconnect(); window.removeEventListener('resize', update) }
   }, [])
+  // Check if GVM stack is installed
+  useEffect(() => {
+    fetch('/api/gvm/available')
+      .then(res => res.json())
+      .then(data => setGvmAvailable(data.available ?? false))
+      .catch(() => setGvmAvailable(false))
+  }, [])
+
   const { isDark } = useTheme()
   const { sessionId, resetSession, switchSession } = useSession()
 
@@ -883,6 +892,7 @@ export default function GraphPage() {
         hasReconData={hasReconData}
         isLogsOpen={activeLogsDrawer === 'recon'}
         // GVM props
+        gvmAvailable={gvmAvailable}
         onStartGvm={handleStartGvm}
         onPauseGvm={handlePauseGvm}
         onResumeGvm={handleResumeGvm}

@@ -12,7 +12,7 @@
 <br/>
 
 <p align="center">
-  <img height="24" src="https://img.shields.io/badge/v3.1.0-release-2E8B57?style=flat" alt="Version 3.0.0"/>
+  <img height="24" src="https://img.shields.io/badge/v3.1.3-release-2E8B57?style=flat" alt="Version 3.0.0"/>
   <img height="24" src="https://img.shields.io/badge/WARNING-SECURITY%20TOOL-B22222?style=flat" alt="Security Tool Warning"/>
   <img height="24" src="https://img.shields.io/badge/LICENSE-MIT-4169A1?style=flat" alt="MIT License"/>
   <img height="24" src="https://img.shields.io/badge/END--TO--END-PIPELINE-A01025?style=flat" alt="End-to-End Pipeline"/>

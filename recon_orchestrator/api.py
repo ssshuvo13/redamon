@@ -143,6 +143,7 @@ async def health_check():
         running_gvm_scans=container_manager.get_gvm_running_count() if container_manager else 0,
         running_github_hunts=container_manager.get_github_hunt_running_count() if container_manager else 0,
         running_trufflehog_scans=container_manager.get_trufflehog_running_count() if container_manager else 0,
+        gvm_available=container_manager.is_gvm_available() if container_manager else False,
     )
 
 

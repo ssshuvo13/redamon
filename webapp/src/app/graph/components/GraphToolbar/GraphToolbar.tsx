@@ -28,6 +28,7 @@ interface GraphToolbarProps {
   hasReconData?: boolean
   isLogsOpen?: boolean
   // GVM props
+  gvmAvailable?: boolean
   onStartGvm?: () => void
   onPauseGvm?: () => void
   onResumeGvm?: () => void
@@ -101,6 +102,7 @@ export function GraphToolbar({
   hasReconData = false,
   isLogsOpen = false,
   // GVM props
+  gvmAvailable = true,
   onStartGvm,
   onPauseGvm,
   onResumeGvm,
@@ -322,9 +324,11 @@ export function GraphToolbar({
               <button
                 className={`${styles.gvmButton} ${isGvmActive ? styles.gvmButtonActive : ''}`}
                 onClick={isGvmPaused ? onResumeGvm : onStartGvm}
-                disabled={isGvmRunning || (!hasReconData && !isGvmPaused) || (stealthMode && !isGvmPaused)}
+                disabled={!gvmAvailable || isGvmRunning || (!hasReconData && !isGvmPaused) || (stealthMode && !isGvmPaused)}
                 title={
-                  stealthMode && !isGvmPaused
+                  !gvmAvailable
+                    ? 'GVM is not installed. Run ./redamon.sh install --gvm to enable vulnerability scanning'
+                    : stealthMode && !isGvmPaused
                     ? 'GVM scanning is disabled in Stealth Mode (generates ~50,000 active probes per target)'
                     : !hasReconData && !isGvmPaused
                     ? 'Run recon first'

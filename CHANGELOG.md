@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [3.1.3] - 2026-03-29
+
+### Fixed
+
+- **GVM scan stuck at 0%** -- `ospd-openvas` could not connect to MQTT broker (`[Errno 111] Connection refused`) because Greenbone's `:stable` rolling tag silently upgraded to a version requiring Mosquitto and `notus-scanner`. Pinned all 12 Greenbone images to `22.4` in both `docker-compose.yml` and `gvm_scan/docker-compose.yml` to prevent upstream breaking changes ([#78](https://github.com/user/redamon/issues/78))
+- **GVM button enabled without GVM installed** -- users who installed without `--gvm` still saw an active GVM Scan button. Added a `/health` availability check (`gvm_available`) from the recon orchestrator that detects whether `gvmd` is running, exposed via `/api/gvm/available`, and wired into the toolbar to disable the button with a descriptive tooltip when GVM is not installed
+
+---
+
 ## [3.1.2] - 2026-03-29
 
 ### Added

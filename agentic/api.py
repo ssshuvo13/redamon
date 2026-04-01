@@ -582,18 +582,6 @@ async def test_llm_provider(body: LlmProviderTestRequest):
                 kwargs["http_client"] = httpx.Client(verify=False)
                 kwargs["http_async_client"] = httpx.AsyncClient(verify=False)
             llm = ChatOpenAI(**kwargs)
-        elif ptype == "claude_code":
-            from langchain_openai import ChatOpenAI
-            proxy_base = (body.baseUrl or "http://host.docker.internal:8099").rstrip("/")
-            if not proxy_base.endswith("/v1"):
-                proxy_base = proxy_base + "/v1"
-            llm = ChatOpenAI(
-                model=body.modelIdentifier or "claude-code/claude-sonnet-4-6",
-                api_key="claude-code",
-                base_url=proxy_base,
-                temperature=body.temperature,
-                max_tokens=body.maxTokens,
-            )
         else:
             return JSONResponse(
                 content={"success": False, "error": f"Unknown provider type: {ptype}"},

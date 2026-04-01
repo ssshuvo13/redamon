@@ -101,6 +101,11 @@ def load_skill_content(skill_id: str) -> Optional[str]:
     normalized = skill_id.replace("/", os.sep).replace("\\", os.sep)
     skill_path = _SKILLS_DIR / (normalized + ".md")
 
+    # Security: prevent path traversal outside skills directory
+    if not skill_path.resolve().is_relative_to(_SKILLS_DIR.resolve()):
+        logger.warning(f"Path traversal attempt blocked: {skill_id}")
+        return None
+
     if not skill_path.exists():
         logger.warning(f"Skill not found: {skill_id} (looked at {skill_path})")
         return None
@@ -111,53 +116,3 @@ def load_skill_content(skill_id: str) -> Optional[str]:
         logger.error(f"Failed to read skill {skill_id}: {exc}")
         return None
 
-
-def build_skills_prompt_section(skill_ids: list[str]) -> str:
-    """
-    Build the system prompt section for a list of enabled skill IDs.
-    Loads each skill's content and formats it as a structured block.
-
-    Args:
-        skill_ids: List of skill IDs to inject (e.g. ["vulnerabilities/ssrf", "tooling/nuclei"])
-
-    Returns:
-        A formatted string to append to the system prompt, or empty string if no skills.
-    """
-    if not skill_ids:
-        return ""
-
-    # Cap at MAX_SKILLS
-    ids_to_load = skill_ids[:MAX_SKILLS]
-
-    parts: list[str] = []
-    loaded = 0
-
-    for skill_id in ids_to_load:
-        content = load_skill_content(skill_id)
-        if content:
-            # Parse out name/description for the section header
-            meta, body = _parse_frontmatter(content)
-            name = meta.get("name") or skill_id
-            description = meta.get("description", "")
-
-            header = f"### Skill: {name}"
-            if description:
-                header += f"\n> {description}"
-
-            parts.append(f"{header}\n\n{body}")
-            loaded += 1
-        else:
-            logger.warning(f"Skill '{skill_id}' could not be loaded — skipping")
-
-    if not parts:
-        return ""
-
-    section = (
-        "\n\n## SPECIALIST SKILLS\n\n"
-        "The following specialist knowledge has been loaded for this session. "
-        "Apply this expertise when relevant to your current objective:\n\n"
-        + "\n\n---\n\n".join(parts)
-    )
-
-    logger.info(f"Injected {loaded}/{len(ids_to_load)} skills into system prompt")
-    return section

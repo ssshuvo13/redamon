@@ -349,6 +349,139 @@ export function AgentBehaviourSection({ data, updateField }: AgentBehaviourSecti
             </div>
           </div>
 
+          {/* Fireteam (multi-agent) */}
+          {(() => {
+            const fireteamEnabled = (data as any).fireteamEnabled ?? true
+            const maxConcurrent = (data as any).fireteamMaxConcurrent ?? 5
+            const maxMembers = (data as any).fireteamMaxMembers ?? 5
+            const memberMaxIter = (data as any).fireteamMemberMaxIterations ?? 20
+            const timeoutSec = (data as any).fireteamTimeoutSec ?? 1800
+            const allowedPhasesRaw = (data as any).fireteamAllowedPhases ?? ['informational', 'exploitation', 'post_exploitation']
+            const allowedPhases: string[] = Array.isArray(allowedPhasesRaw)
+              ? allowedPhasesRaw
+              : String(allowedPhasesRaw || '').split(',').map(s => s.trim()).filter(Boolean)
+            const togglePhase = (phase: string) => {
+              const next = allowedPhases.includes(phase)
+                ? allowedPhases.filter(p => p !== phase)
+                : [...allowedPhases, phase]
+              if (next.length === 0) return // at least one phase required
+              updateField('fireteamAllowedPhases' as any, next as any)
+            }
+            const crossError =
+              fireteamEnabled && maxConcurrent > maxMembers
+                ? 'Max concurrent cannot exceed max members'
+                : null
+            return (
+              <div className={styles.subSection}>
+                <h3 className={styles.subSectionTitle}>Fireteam (multi-agent)</h3>
+                <div className={styles.fieldHint} style={{ marginBottom: 8 }}>
+                  When on, the agent can deploy up to N specialist sub-agents in parallel on independent attack surfaces.
+                  Parent stays in charge of safety approvals and phase transitions.
+                </div>
+                <div className={styles.toggleRow}>
+                  <Toggle
+                    checked={fireteamEnabled}
+                    onChange={(v) => updateField('fireteamEnabled' as any, v as any)}
+                    labelOn="Fireteam enabled"
+                    labelOff="Fireteam disabled"
+                  />
+                </div>
+                {fireteamEnabled && (
+                  <>
+                    <div className={styles.fieldRow}>
+                      <div className={styles.fieldGroup}>
+                        <label className={styles.fieldLabel}>Max concurrent members</label>
+                        <input
+                          type="number"
+                          className="textInput"
+                          value={maxConcurrent}
+                          min={1}
+                          max={8}
+                          onChange={(e) => {
+                            const v = Math.max(1, Math.min(8, parseInt(e.target.value) || 5))
+                            updateField('fireteamMaxConcurrent' as any, v as any)
+                          }}
+                        />
+                        <span className={styles.fieldHint}>1-8. Upper limit on members in-flight at once.</span>
+                      </div>
+                      <div className={styles.fieldGroup}>
+                        <label className={styles.fieldLabel}>Max members per fireteam</label>
+                        <input
+                          type="number"
+                          className="textInput"
+                          value={maxMembers}
+                          min={2}
+                          max={8}
+                          onChange={(e) => {
+                            const v = Math.max(2, Math.min(8, parseInt(e.target.value) || 5))
+                            updateField('fireteamMaxMembers' as any, v as any)
+                          }}
+                        />
+                        <span className={styles.fieldHint}>2-8. Hard cap on fireteam size the LLM can request.</span>
+                      </div>
+                    </div>
+                    <div className={styles.fieldRow}>
+                      <div className={styles.fieldGroup}>
+                        <label className={styles.fieldLabel}>Per-member max iterations</label>
+                        <input
+                          type="number"
+                          className="textInput"
+                          value={memberMaxIter}
+                          min={5}
+                          max={50}
+                          onChange={(e) => {
+                            const v = Math.max(5, Math.min(50, parseInt(e.target.value) || 20))
+                            updateField('fireteamMemberMaxIterations' as any, v as any)
+                          }}
+                        />
+                        <span className={styles.fieldHint}>5-50. Each member's ReAct budget before it exits.</span>
+                      </div>
+                      <div className={styles.fieldGroup}>
+                        <label className={styles.fieldLabel}>Wave timeout (seconds)</label>
+                        <input
+                          type="number"
+                          className="textInput"
+                          value={timeoutSec}
+                          min={60}
+                          max={7200}
+                          onChange={(e) => {
+                            const v = Math.max(60, Math.min(7200, parseInt(e.target.value) || 1800))
+                            updateField('fireteamTimeoutSec' as any, v as any)
+                          }}
+                        />
+                        <span className={styles.fieldHint}>60-7200. Hard wall-clock ceiling for the whole fireteam.</span>
+                      </div>
+                    </div>
+                    <div className={styles.fieldGroup}>
+                      <label className={styles.fieldLabel}>Allowed phases</label>
+                      <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+                        {(['informational', 'exploitation', 'post_exploitation'] as const).map(p => (
+                          <label key={p} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                            <input
+                              type="checkbox"
+                              checked={allowedPhases.includes(p)}
+                              onChange={() => togglePhase(p)}
+                            />
+                            <span style={{ fontSize: '0.85rem' }}>{p}</span>
+                          </label>
+                        ))}
+                      </div>
+                      <span className={styles.fieldHint}>
+                        Phases in which the agent may deploy fireteams. Recon (informational) is safe; exploitation/post-exploitation are deeper and usually serial.
+                      </span>
+                    </div>
+                    {crossError && (
+                      <div className={styles.shodanWarning} style={{ borderColor: 'rgba(239, 68, 68, 0.4)', background: 'rgba(239, 68, 68, 0.08)' }}>
+                        <AlertTriangle size={14} style={{ color: '#ef4444' }} />
+                        <span>{crossError}</span>
+                      </div>
+                    )}
+                  </>
+                )}
+              </div>
+            )
+          })()}
+
           {/* Agent Limits */}
           <div className={styles.subSection}>
             <h3 className={styles.subSectionTitle}>Agent Limits</h3>

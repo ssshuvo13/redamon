@@ -71,6 +71,38 @@ def build_tool_args_section(allowed_tools):
     return "\n".join(lines)
 
 
+_FIRETEAM_EXAMPLE_BLOCK = """deploy_fireteam (Fireteam: launch 2-8 specialist sub-agents in parallel on INDEPENDENT subtasks):
+```json
+{{"action": "deploy_fireteam", "fireteam_plan": {{"members": [{{"name": "Web Tester", "task": "Probe HTTP on 10.0.0.1:80 for SQLi, XSS, IDOR. Use nuclei first.", "skills": ["sql_injection", "xss"]}}, {{"name": "SSH Analyst", "task": "Identify SSH version and known CVEs on 10.0.0.1:22. No brute force in informational phase.", "skills": []}}], "plan_rationale": "Two independent services, specialist-level testing per surface"}}, ...}}
+```
+When to choose deploy_fireteam vs plan_tools:
+- plan_tools: you know exactly which N tools to call and will interpret results yourself.
+- deploy_fireteam: you want N sub-agents to REASON independently about their own subproblem and return findings.
+Rule of thumb: if you would prompt yourself N times with "test service X", use deploy_fireteam. If you would fire N specific tool commands, use plan_tools.
+Each fireteam member runs its own ReAct loop and decides when to emit `action=complete`. Do NOT specify iteration counts — the member stops when its work is done; a global operator-set safety cap applies.
+Hard limits: maximum 8 members per fireteam; dangerous tools from members always escalate to you for approval.
+
+"""
+
+
+def build_fireteam_prompt_fragments(enabled: bool, phase: str, allowed_phases):
+    """Return (action_enum_fragment, plan_field_fragment, example_section).
+
+    When enabled AND current phase is in allowed_phases, the fragments inject
+    the deploy_fireteam action into the prompt. Otherwise they are empty
+    strings, saving ~500 tokens per LLM call on sessions where Fireteam
+    cannot run anyway. The think_node gate is still defensive — the LLM
+    won't even see the action listed when gates are closed.
+    """
+    gate_open = bool(enabled) and phase in (allowed_phases or [])
+    if not gate_open:
+        return ("", "", "")
+    action_enum = "deploy_fireteam, "
+    plan_field = '\n    "fireteam_plan": "<only if action=deploy_fireteam: see deploy_fireteam example below>",'
+    example = _FIRETEAM_EXAMPLE_BLOCK
+    return (action_enum, plan_field, example)
+
+
 def build_tool_name_enum(allowed_tools):
     """Build the tool_name enum string for JSON examples."""
     visible = _get_visible_tools(allowed_tools)
@@ -475,10 +507,10 @@ Based on the context above, decide your next action. You MUST output valid JSON:
 {{
     "thought": "Your analysis of the current situation and what needs to be done next",
     "reasoning": "Why you chose this specific action over alternatives",
-    "action": "<one of: use_tool, plan_tools, transition_phase, complete, ask_user>",
+    "action": "<one of: use_tool, plan_tools, {fireteam_action_enum}transition_phase, complete, ask_user>",
     "tool_name": "<only if action=use_tool: {tool_name_enum}>",
     "tool_args": "<only if action=use_tool: {{'question': '...'}} or {{'args': '...'}} or {{'command': '...'}}",
-    "tool_plan": "<only if action=plan_tools: see plan_tools example below>",
+    "tool_plan": "<only if action=plan_tools: see plan_tools example below>",{fireteam_plan_field}
     "phase_transition": "<only if action=transition_phase>",
     "user_question": "<only if action=ask_user>",
     "completion_reason": "<only if action=complete>",
@@ -508,7 +540,7 @@ plan_tools (run multiple INDEPENDENT tools as a wave — use when 2+ tools have 
 ```
 Do NOT include tools that depend on another tool's output — plan those in the NEXT iteration after seeing results.
 
-complete: `{{"action": "complete", "completion_reason": "Successfully exploited target", ...}}`
+{fireteam_example_section}complete: `{{"action": "complete", "completion_reason": "Successfully exploited target", ...}}`
 
 ### When to Use action="complete" (CRITICAL):
 

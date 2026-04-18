@@ -397,6 +397,9 @@ services:
       # Knowledge Base
       KB_ENABLED: "${KB_ENABLED:-true}"
       KB_PATH: /app/knowledge_base/data
+      # Fireteam requires AsyncPostgresSaver for safe mid-wave checkpointing.
+      PERSISTENT_CHECKPOINTER: "true"
+      DATABASE_URL: "postgresql://${POSTGRES_USER:-redamon}:${POSTGRES_PASSWORD:-redamon_secret}@postgres:5432/${POSTGRES_DB:-redamon}"
     extra_hosts:
       - "host.docker.internal:host-gateway"
     volumes:
@@ -408,6 +411,8 @@ services:
       neo4j:
         condition: service_healthy
       kali-sandbox:
+        condition: service_healthy
+      postgres:
         condition: service_healthy
     restart: unless-stopped
     healthcheck:

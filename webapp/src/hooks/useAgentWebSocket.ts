@@ -44,6 +44,7 @@ interface UseAgentWebSocketReturn {
   sendQuery: (question: string) => void
   sendApproval: (decision: 'approve' | 'modify' | 'abort', modification?: string) => void
   sendToolConfirmation: (decision: 'approve' | 'modify' | 'reject', modifications?: Record<string, any>) => void
+  sendFireteamMemberConfirmation: (wave_id: string, member_id: string, decision: 'approve' | 'reject', modifications?: Record<string, any>) => void
   sendAnswer: (answer: string) => void
   sendGuidance: (message: string) => void
   sendSkillInject: (payload: { skill_id: string; skill_name: string; content: string }) => void
@@ -152,6 +153,21 @@ export function useAgentWebSocket({
     const payload: any = { decision }
     if (modifications) payload.modifications = modifications
     sendMessage(MessageType.TOOL_CONFIRMATION, payload)
+  }, [sendMessage])
+
+  // Public API: Send a single fireteam member's dangerous-tool decision.
+  // Unlike sendToolConfirmation, this does NOT pause the parent graph —
+  // other members keep running while this one resumes on approve/reject.
+  const sendFireteamMemberConfirmation = useCallback((
+    wave_id: string,
+    member_id: string,
+    decision: 'approve' | 'reject',
+    modifications?: Record<string, any>,
+  ) => {
+    if (!isAuthenticatedRef.current) return
+    const payload: any = { wave_id, member_id, decision }
+    if (modifications) payload.modifications = modifications
+    sendMessage(MessageType.FIRETEAM_MEMBER_CONFIRMATION, payload)
   }, [sendMessage])
 
   // Public API: Send answer
@@ -389,6 +405,7 @@ export function useAgentWebSocket({
     sendQuery,
     sendApproval,
     sendToolConfirmation,
+    sendFireteamMemberConfirmation,
     sendAnswer,
     sendGuidance,
     sendSkillInject,

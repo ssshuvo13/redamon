@@ -16,6 +16,7 @@ export enum MessageType {
   APPROVAL = 'approval',
   ANSWER = 'answer',
   TOOL_CONFIRMATION = 'tool_confirmation',
+  FIRETEAM_MEMBER_CONFIRMATION = 'fireteam_member_confirmation',
   PING = 'ping',
   GUIDANCE = 'guidance',
   SKILL_INJECT = 'skill_inject',
@@ -47,6 +48,142 @@ export enum MessageType {
   PLAN_ANALYSIS = 'plan_analysis',
   DEEP_THINK = 'deep_think',
   TOOL_CONFIRMATION_REQUEST = 'tool_confirmation_request',
+
+  // Fireteam (multi-agent) events
+  FIRETEAM_DEPLOYED = 'fireteam_deployed',
+  FIRETEAM_MEMBER_STARTED = 'fireteam_member_started',
+  FIRETEAM_THINKING = 'fireteam_thinking',
+  FIRETEAM_TOOL_START = 'fireteam_tool_start',
+  FIRETEAM_TOOL_OUTPUT_CHUNK = 'fireteam_tool_output_chunk',
+  FIRETEAM_TOOL_COMPLETE = 'fireteam_tool_complete',
+  FIRETEAM_PLAN_START = 'fireteam_plan_start',
+  FIRETEAM_PLAN_COMPLETE = 'fireteam_plan_complete',
+  FIRETEAM_MEMBER_COMPLETED = 'fireteam_member_completed',
+  FIRETEAM_COMPLETED = 'fireteam_completed',
+  FIRETEAM_MEMBER_AWAITING_CONFIRMATION = 'fireteam_member_awaiting_confirmation',
+}
+
+export interface FireteamMemberAwaitingConfirmationPayload {
+  fireteam_id: string
+  wave_id: string
+  member_id: string
+  member_name?: string
+  confirmation_id?: string
+  mode?: 'single' | 'plan'
+  tools: Array<{ tool_name: string; tool_args: Record<string, unknown> }>
+  reasoning?: string
+  iteration?: number
+}
+
+// =============================================================================
+// FIRETEAM PAYLOADS (Server → Client)
+// =============================================================================
+
+export type FireteamMemberStatus =
+  | 'running'
+  | 'success'
+  | 'partial'
+  | 'timeout'
+  | 'needs_confirmation'
+  | 'cancelled'
+  | 'error'
+
+export interface FireteamMemberInfo {
+  member_id: string
+  name: string
+  task: string
+  skills: string[]
+  max_iterations: number
+}
+
+export interface FireteamDeployedPayload {
+  fireteam_id: string
+  iteration: number
+  plan_rationale: string
+  member_count: number
+  members: FireteamMemberInfo[]
+}
+
+export interface FireteamMemberStartedPayload {
+  fireteam_id: string
+  member_id: string
+  name: string
+}
+
+export interface FireteamThinkingPayload {
+  fireteam_id: string
+  member_id: string
+  name: string
+  iteration: number
+  phase: string
+  thought: string
+  reasoning: string
+}
+
+export interface FireteamToolStartPayload {
+  fireteam_id: string
+  member_id: string
+  tool_name: string
+  tool_args: Record<string, unknown>
+  wave_id?: string | null
+  step_index?: number | null
+}
+
+export interface FireteamToolOutputChunkPayload {
+  fireteam_id: string
+  member_id: string
+  tool_name: string
+  chunk: string
+  is_final: boolean
+  wave_id?: string | null
+  step_index?: number | null
+}
+
+export interface FireteamToolCompletePayload {
+  fireteam_id: string
+  member_id: string
+  tool_name: string
+  success: boolean
+  duration_ms: number
+  output_excerpt: string
+  wave_id?: string | null
+  step_index?: number | null
+}
+
+export interface FireteamPlanStartPayload {
+  fireteam_id: string
+  member_id: string
+  wave_id: string
+  plan_rationale: string
+  tools: string[]
+}
+
+export interface FireteamPlanCompletePayload {
+  fireteam_id: string
+  member_id: string
+  wave_id: string
+  total_steps: number
+  successful: number
+  failed: number
+}
+
+export interface FireteamMemberCompletedPayload {
+  fireteam_id: string
+  member_id: string
+  name: string
+  status: FireteamMemberStatus
+  iterations_used: number
+  tokens_used: number
+  findings_count: number
+  wall_clock_seconds: number
+  error_message?: string | null
+}
+
+export interface FireteamCompletedPayload {
+  fireteam_id: string
+  total: number
+  status_counts: Record<string, number>
+  wall_clock_seconds: number
 }
 
 // =============================================================================
@@ -107,11 +244,14 @@ export interface ToolConfirmationTool {
 }
 
 export interface ToolConfirmationRequestPayload {
-  mode: 'single' | 'plan'
+  mode: 'single' | 'plan' | 'fireteam_escalation'
   tools: ToolConfirmationTool[]
   reasoning?: string
   phase?: string
   iteration?: number
+  /** Non-null when a fireteam member escalated this request. */
+  agent_id?: string | null
+  agent_name?: string | null
 }
 
 // =============================================================================
@@ -122,6 +262,10 @@ export interface ConnectedPayload {
   session_id: string
   message: string
   timestamp: string
+  /** Protocol version for forward/backward compatibility. Added in v2. */
+  protocol_version?: number
+  /** Server-advertised feature flags (e.g. "fireteam", "plan_tools"). */
+  features?: string[]
 }
 
 export interface ThinkingPayload {
@@ -155,6 +299,8 @@ export interface ToolCompletePayload {
   actionable_findings: string[]
   recommended_next_steps: string[]
   wave_id?: string
+  step_index?: number
+  duration_ms?: number
 }
 
 export interface PlanStartPayload {

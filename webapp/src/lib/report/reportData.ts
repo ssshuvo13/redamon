@@ -246,6 +246,36 @@ export interface ReportData {
     totalChainFindings: number
   }
 
+  // Fireteam (multi-agent) deployments
+  fireteams?: {
+    totalFireteams: number
+    totalMembers: number
+    totalFindings: number
+    deployments: {
+      fireteamIdKey: string
+      iteration: number
+      planRationale: string
+      startedAt: string
+      completedAt: string | null
+      wallClockSeconds: number | null
+      statusCounts: Record<string, number> | null
+      status: string
+      members: {
+        memberIdKey: string
+        name: string
+        task: string
+        skills: string[]
+        status: string
+        completionReason: string | null
+        iterationsUsed: number
+        tokensUsed: number
+        findingsCount: number
+        wallClockSeconds: number | null
+        errorMessage: string | null
+      }[]
+    }[]
+  }
+
   // Computed Metrics
   metrics: {
     riskScore: number        // 0–100 weighted score (same formula as Insights gauge)
@@ -393,6 +423,91 @@ export async function gatherReportData(projectId: string): Promise<ReportData> {
       riskScore >= 80 ? 'Critical' : riskScore >= 60 ? 'High'
       : riskScore >= 40 ? 'Medium' : riskScore >= 20 ? 'Low' : 'Minimal'
 
+    // Fireteam (multi-agent) deployments, keyed by this project's conversations.
+    // Authoritative findings-per-member come from Neo4j ChainFinding rows
+    // filtered by fireteam_id + source_agent — Postgres findingsCount may be
+    // stale (fire-and-forget writes).
+    let fireteamsBlock: ReportData['fireteams'] = undefined
+    try {
+      const conversations = await prisma.conversation.findMany({
+        where: { projectId },
+        select: { id: true },
+      })
+      const convIds = conversations.map(c => c.id)
+      if (convIds.length > 0) {
+        const ftRows = await prisma.fireteam.findMany({
+          where: { parentConversationId: { in: convIds } },
+          include: { members: { orderBy: { startedAt: 'asc' } } },
+          orderBy: { startedAt: 'asc' },
+        })
+        if (ftRows.length > 0) {
+          // Count ChainFinding rows in Neo4j by (fireteam_id, source_agent)
+          // and use those as authoritative per-member findings.
+          const ftKeys = ftRows.map(f => f.fireteamIdKey)
+          const ftSession = getSession()
+          let authoritativeCounts: Map<string, number> = new Map()
+          try {
+            const ftFindingsRes = await ftSession.run(
+              `
+              MATCH (f:ChainFinding)
+              WHERE f.project_id = $pid AND f.fireteam_id IN $ftKeys
+              RETURN f.fireteam_id AS ft, f.source_agent AS member, count(f) AS n
+              `,
+              { pid: projectId, ftKeys },
+            )
+            for (const r of ftFindingsRes.records) {
+              const key = `${r.get('ft')}::${r.get('member')}`
+              authoritativeCounts.set(key, Number(r.get('n')))
+            }
+          } catch (e) {
+            console.warn('[report] fireteam findings Neo4j query failed:', e)
+          } finally {
+            await ftSession.close()
+          }
+          const counted = (ftKey: string, memberName: string, fallback: number): number => {
+            const n = authoritativeCounts.get(`${ftKey}::${memberName}`)
+            return n !== undefined ? n : fallback
+          }
+
+          const totalFindingsNeo4j = Array.from(authoritativeCounts.values()).reduce((a, b) => a + b, 0)
+          const totalFindingsPostgres = ftRows.reduce(
+            (n, f) => n + f.members.reduce((mn, m) => mn + (m.findingsCount ?? 0), 0),
+            0,
+          )
+          fireteamsBlock = {
+            totalFireteams: ftRows.length,
+            totalMembers: ftRows.reduce((n, f) => n + f.members.length, 0),
+            totalFindings: totalFindingsNeo4j > 0 ? totalFindingsNeo4j : totalFindingsPostgres,
+            deployments: ftRows.map(f => ({
+              fireteamIdKey: f.fireteamIdKey,
+              iteration: f.iteration,
+              planRationale: f.planRationale ?? '',
+              startedAt: f.startedAt.toISOString(),
+              completedAt: f.completedAt ? f.completedAt.toISOString() : null,
+              wallClockSeconds: f.wallClockSeconds ?? null,
+              statusCounts: (f.statusCounts as Record<string, number> | null) ?? null,
+              status: f.status,
+              members: f.members.map(m => ({
+                memberIdKey: m.memberIdKey,
+                name: m.name,
+                task: m.task,
+                skills: m.skills,
+                status: m.status,
+                completionReason: m.completionReason,
+                iterationsUsed: m.iterationsUsed,
+                tokensUsed: m.tokensUsed,
+                findingsCount: counted(f.fireteamIdKey, m.name, m.findingsCount),
+                wallClockSeconds: m.wallClockSeconds ?? null,
+                errorMessage: m.errorMessage,
+              })),
+            })),
+          }
+        }
+      }
+    } catch (e) {
+      console.warn('[report] fireteam fetch failed:', e)
+    }
+
     return {
       project,
       remediations,
@@ -406,6 +521,7 @@ export async function gatherReportData(projectId: string): Promise<ReportData> {
       jsRecon: jsReconData,
       otx: otxData,
       attackChains: attackChainData,
+      fireteams: fireteamsBlock,
       metrics: {
         riskScore,
         riskLabel,

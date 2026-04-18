@@ -99,10 +99,59 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
       updateData.targetIps = updateData.targetIps.map((s: string) => s.trim()).filter(Boolean)
     }
 
+    // Fireteam settings: server-side Zod validation so a direct API call
+    // with out-of-range values (bypassing the UI form) still gets rejected.
+    // Only validate when at least one fireteam field is being touched.
+    const FIRETEAM_FIELDS = ['fireteamEnabled', 'fireteamMaxConcurrent',
+      'fireteamMaxMembers', 'fireteamMemberMaxIterations',
+      'fireteamTimeoutSec', 'fireteamAllowedPhases'] as const
+    const touchesFireteam = FIRETEAM_FIELDS.some(k => k in updateData)
+    let fireteamOldValues: Record<string, unknown> | null = null
+    if (touchesFireteam) {
+      const { validateFireteamSettings } = await import('@/lib/validation/fireteamSettings')
+      const err = validateFireteamSettings(updateData)
+      if (err) {
+        return NextResponse.json({ error: err }, { status: 400 })
+      }
+      // Capture old values for audit log BEFORE the update.
+      const existing = await prisma.project.findUnique({
+        where: { id },
+        select: Object.fromEntries(FIRETEAM_FIELDS.map(k => [k, true])) as any,
+      })
+      fireteamOldValues = existing as Record<string, unknown> | null
+    }
+
     const project = await prisma.project.update({
       where: { id },
       data: updateData
     })
+
+    // Audit trail for fireteam settings changes. Best-effort: audit failure
+    // must not roll back the update.
+    if (touchesFireteam && fireteamOldValues) {
+      try {
+        const auditRows = []
+        for (const field of FIRETEAM_FIELDS) {
+          if (!(field in updateData)) continue
+          const oldV = fireteamOldValues[field]
+          const newV = (updateData as Record<string, unknown>)[field]
+          if (JSON.stringify(oldV) === JSON.stringify(newV)) continue
+          auditRows.push({
+            projectId: id,
+            userId: (project as { userId?: string | null }).userId ?? null,
+            field,
+            oldValue: oldV === undefined ? null : (oldV as any),
+            newValue: newV === undefined ? null : (newV as any),
+            source: 'api',
+          })
+        }
+        if (auditRows.length > 0) {
+          await prisma.fireteamSettingsAudit.createMany({ data: auditRows })
+        }
+      } catch (e) {
+        console.warn('Fireteam settings audit write failed:', e)
+      }
+    }
 
     // Ensure Domain node exists in Neo4j (create if missing, update if domain changed)
     if (!project.ipMode && project.targetDomain) {

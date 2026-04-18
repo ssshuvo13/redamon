@@ -1,8 +1,10 @@
 import { useState, useRef, useMemo } from 'react'
-import type { ChatItem, Message, FileDownloadItem } from '../types'
+import type { ChatItem, Message, FileDownloadItem, FireteamItem } from '../types'
 import type { ThinkingItem, ToolExecutionItem, PlanWaveItem, DeepThinkItem } from '../AgentTimeline'
 import type { TodoItem } from '@/lib/websocket-types'
 import type { Phase } from '../types'
+
+type TimelineGroupItem = ThinkingItem | ToolExecutionItem | PlanWaveItem | DeepThinkItem | FireteamItem
 
 export function useChatState() {
   const [chatItems, setChatItems] = useState<ChatItem[]>([])
@@ -21,10 +23,10 @@ export function useChatState() {
   const groupedChatItems = useMemo(() => {
     const result: Array<{
       type: 'message' | 'timeline' | 'file_download'
-      content: Message | Array<ThinkingItem | ToolExecutionItem | PlanWaveItem | DeepThinkItem> | FileDownloadItem
+      content: Message | TimelineGroupItem[] | FileDownloadItem
     }> = []
 
-    let currentTimelineGroup: Array<ThinkingItem | ToolExecutionItem | PlanWaveItem | DeepThinkItem> = []
+    let currentTimelineGroup: TimelineGroupItem[] = []
 
     chatItems.forEach((item) => {
       if ('role' in item) {
@@ -39,8 +41,16 @@ export function useChatState() {
           currentTimelineGroup = []
         }
         result.push({ type: 'file_download', content: item as FileDownloadItem })
-      } else if ('type' in item && (item.type === 'thinking' || item.type === 'tool_execution' || item.type === 'plan_wave' || item.type === 'deep_think')) {
-        currentTimelineGroup.push(item as ThinkingItem | ToolExecutionItem | PlanWaveItem | DeepThinkItem)
+      } else if (
+        'type' in item && (
+          item.type === 'thinking'
+          || item.type === 'tool_execution'
+          || item.type === 'plan_wave'
+          || item.type === 'deep_think'
+          || item.type === 'fireteam'
+        )
+      ) {
+        currentTimelineGroup.push(item as TimelineGroupItem)
       }
     })
 

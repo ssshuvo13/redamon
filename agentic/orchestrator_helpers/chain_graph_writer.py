@@ -348,6 +348,9 @@ def fire_record_step(
     error_message: Optional[str] = None,
     duration_ms: Optional[int] = None,
     extracted_info: Optional[dict] = None,
+    agent_id: str = "root",
+    agent_name: str = "root",
+    fireteam_id: Optional[str] = None,
 ) -> None:
     if not neo4j_uri or not neo4j_password:
         return
@@ -371,6 +374,9 @@ def fire_record_step(
         error_message=error_message,
         duration_ms=duration_ms,
         extracted_info=extracted_info,
+        agent_id=agent_id,
+        agent_name=agent_name,
+        fireteam_id=fireteam_id,
     )
 
 
@@ -396,6 +402,9 @@ def sync_record_step(
     error_message: Optional[str] = None,
     duration_ms: Optional[int] = None,
     extracted_info: Optional[dict] = None,
+    agent_id: str = "root",
+    agent_name: str = "root",
+    fireteam_id: Optional[str] = None,
 ) -> None:
     """Write ChainStep synchronously (blocking).
 
@@ -424,6 +433,9 @@ def sync_record_step(
             error_message=error_message,
             duration_ms=duration_ms,
             extracted_info=extracted_info,
+            agent_id=agent_id,
+            agent_name=agent_name,
+            fireteam_id=fireteam_id,
         )
     except Exception as exc:
         logger.error("Chain graph step write failed (sync): %s", exc)
@@ -437,6 +449,7 @@ def _write_step(
     tool_name, tool_args_summary, thought, reasoning,
     output_summary, output_analysis, success, error_message,
     duration_ms, extracted_info,
+    agent_id="root", agent_name="root", fireteam_id=None,
 ):
     driver = _get_driver(uri, user, password)
 
@@ -458,6 +471,9 @@ def _write_step(
         s.success           = $success,
         s.error_message     = $error_message,
         s.duration_ms       = $duration_ms,
+        s.agent_id          = $agent_id,
+        s.agent_name        = $agent_name,
+        s.fireteam_id       = $fireteam_id,
         s.created_at        = datetime()
     """
     params = {
@@ -476,6 +492,9 @@ def _write_step(
         "success": success,
         "error_message": error_message,
         "duration_ms": duration_ms,
+        "agent_id": agent_id or "root",
+        "agent_name": agent_name or "root",
+        "fireteam_id": fireteam_id,
     }
 
     with driver.session() as session:
@@ -531,6 +550,47 @@ def _write_step(
             _resolve_step_bridges(session, step_id, extracted_info or {}, user_id, project_id)
 
     logger.debug("[%s/%s] ChainStep recorded: iter=%d tool=%s", user_id, project_id, iteration, tool_name)
+
+
+def fire_resolve_step_bridges(
+    neo4j_uri: str,
+    neo4j_user: str,
+    neo4j_password: str,
+    *,
+    step_id: str,
+    extracted_info: dict,
+    user_id: str,
+    project_id: str,
+    tool_name: str = "",
+) -> None:
+    """Fire-and-forget: resolve (ChainStep)-[:STEP_*]->(recon node) edges
+    for a previously-written ChainStep.
+
+    Used by callers (notably fireteam_member_think_node) that wrote the
+    ChainStep before the output-analysis LLM call completed. Root think_node
+    doesn't need this because its sync_record_step is invoked AFTER analysis.
+
+    No-op when tool_name == 'query_graph' (matches the inline bridge logic
+    inside _write_step).
+    """
+    if not neo4j_uri or not neo4j_password:
+        return
+    if tool_name == "query_graph":
+        return
+    if not extracted_info:
+        return
+    _fire_and_forget(
+        _write_bridges,
+        neo4j_uri, neo4j_user, neo4j_password,
+        step_id, extracted_info, user_id, project_id,
+    )
+
+
+def _write_bridges(uri, user, password, step_id, extracted_info, user_id, project_id):
+    """Open a Neo4j session and delegate to the existing bridge resolver."""
+    driver = _get_driver(uri, user, password)
+    with driver.session() as session:
+        _resolve_step_bridges(session, step_id, extracted_info or {}, user_id, project_id)
 
 
 def _resolve_step_bridges(session, step_id, extracted_info, user_id, project_id):
@@ -635,6 +695,9 @@ def fire_record_finding(
     related_cves: Optional[List[str]] = None,
     related_ips: Optional[List[str]] = None,
     metadata: Optional[dict] = None,
+    agent_id: str = "root",
+    source_agent: str = "root",
+    fireteam_id: Optional[str] = None,
 ) -> None:
     if not neo4j_uri or not neo4j_password:
         return
@@ -656,6 +719,9 @@ def fire_record_finding(
         iteration=iteration,
         related_cves=related_cves or [],
         related_ips=related_ips or [],
+        agent_id=agent_id,
+        source_agent=source_agent,
+        fireteam_id=fireteam_id,
     )
 
 
@@ -665,6 +731,7 @@ def _write_finding(
     finding_id, chain_id, step_id, user_id, project_id,
     finding_type, severity, title, description, evidence,
     confidence, phase, iteration, related_cves, related_ips,
+    agent_id="root", source_agent="root", fireteam_id=None,
 ):
     driver = _get_driver(uri, user, password)
     # MATCH step first so the finding is only created if the step exists
@@ -684,6 +751,9 @@ def _write_finding(
         confidence:   $confidence,
         phase:        $phase,
         iteration:    $iteration,
+        agent_id:     $agent_id,
+        source_agent: $source_agent,
+        fireteam_id:  $fireteam_id,
         created_at:   datetime()
     })
     MERGE (s)-[:PRODUCED]->(f)
@@ -703,6 +773,9 @@ def _write_finding(
         "confidence": confidence if confidence is not None else 80,
         "phase": phase or "",
         "iteration": iteration,
+        "agent_id": agent_id or "root",
+        "source_agent": source_agent or "root",
+        "fireteam_id": fireteam_id,
     }
 
     with driver.session() as session:

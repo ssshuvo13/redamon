@@ -27,6 +27,15 @@ DANGEROUS_TOOLS = frozenset({
 })
 
 # =============================================================================
+# FIRETEAM MUTEX GROUPS — tools with singleton state inside Kali sandbox
+# Two fireteam members cannot concurrently claim the same group.
+# =============================================================================
+TOOL_MUTEX_GROUPS = {
+    'metasploit': frozenset({'metasploit_console', 'msf_restart'}),
+    'browser': frozenset({'execute_playwright'}),
+}
+
+# =============================================================================
 # DEFAULT SETTINGS - Used as fallback for standalone usage and missing API fields
 # =============================================================================
 
@@ -42,6 +51,17 @@ DEFAULT_AGENT_SETTINGS: dict[str, Any] = {
 
     # Agent Guardrail
     'AGENT_GUARDRAIL_ENABLED': True,
+
+    # Fireteam (multi-agent deployment). Gated by PERSISTENT_CHECKPOINTER=true.
+    'PERSISTENT_CHECKPOINTER': True,             # master prerequisite for FIRETEAM_ENABLED
+    'FIRETEAM_ENABLED': True,                    # master switch, maps from Project.fireteamEnabled
+    'FIRETEAM_MAX_CONCURRENT': 5,                # asyncio.Semaphore permits
+    'FIRETEAM_MAX_MEMBERS': 5,                   # hard cap on members per fireteam
+    'FIRETEAM_MEMBER_MAX_ITERATIONS': 20,        # per-member ReAct iteration budget
+    'FIRETEAM_TIMEOUT_SEC': 1800,                  # wall-clock per fireteam
+    'FIRETEAM_ALLOWED_PHASES': ['informational', 'exploitation', 'post_exploitation'],
+    'FIRETEAM_TOOL_TIMEOUT_S': 600,              # inherits from parent tool timeout
+    'FIRETEAM_CONFIRMATION_TIMEOUT_SEC': 600,    # how long a member waits for operator approval before auto-rejecting
 
     # Phase Configuration
     'ACTIVATE_POST_EXPL_PHASE': True,
@@ -86,7 +106,7 @@ DEFAULT_AGENT_SETTINGS: dict[str, Any] = {
     'KB_SOURCE_BOOSTS': None,      # None = inherit from source_boosts block; dict = merge overrides
 
     # Deep Think (Strategic Reasoning)
-    'DEEP_THINK_ENABLED': False,
+    'DEEP_THINK_ENABLED': True,
 
     # Debug
     'CREATE_GRAPH_IMAGE_ON_INIT': False,
@@ -282,6 +302,13 @@ def fetch_agent_settings(project_id: str, webapp_url: str) -> dict[str, Any]:
     settings['SHODAN_ENABLED'] = project.get('shodanEnabled', DEFAULT_AGENT_SETTINGS['SHODAN_ENABLED'])
     settings['STEALTH_MODE'] = project.get('stealthMode', DEFAULT_AGENT_SETTINGS['STEALTH_MODE'])
     settings['AGENT_GUARDRAIL_ENABLED'] = project.get('agentGuardrailEnabled', DEFAULT_AGENT_SETTINGS['AGENT_GUARDRAIL_ENABLED'])
+    # Fireteam (multi-agent)
+    settings['FIRETEAM_ENABLED'] = bool(project.get('fireteamEnabled', DEFAULT_AGENT_SETTINGS['FIRETEAM_ENABLED']))
+    settings['FIRETEAM_MAX_CONCURRENT'] = int(project.get('fireteamMaxConcurrent', DEFAULT_AGENT_SETTINGS['FIRETEAM_MAX_CONCURRENT']))
+    settings['FIRETEAM_MAX_MEMBERS'] = int(project.get('fireteamMaxMembers', DEFAULT_AGENT_SETTINGS['FIRETEAM_MAX_MEMBERS']))
+    settings['FIRETEAM_MEMBER_MAX_ITERATIONS'] = int(project.get('fireteamMemberMaxIterations', DEFAULT_AGENT_SETTINGS['FIRETEAM_MEMBER_MAX_ITERATIONS']))
+    settings['FIRETEAM_TIMEOUT_SEC'] = int(project.get('fireteamTimeoutSec', DEFAULT_AGENT_SETTINGS['FIRETEAM_TIMEOUT_SEC']))
+    settings['FIRETEAM_ALLOWED_PHASES'] = list(project.get('fireteamAllowedPhases', DEFAULT_AGENT_SETTINGS['FIRETEAM_ALLOWED_PHASES']))
     settings['PHISHING_SMTP_CONFIG'] = project.get('phishingSmtpConfig', DEFAULT_AGENT_SETTINGS['PHISHING_SMTP_CONFIG'])
     settings['DOS_MAX_DURATION'] = project.get('dosMaxDuration', DEFAULT_AGENT_SETTINGS['DOS_MAX_DURATION'])
     settings['DOS_MAX_ATTEMPTS'] = project.get('dosMaxAttempts', DEFAULT_AGENT_SETTINGS['DOS_MAX_ATTEMPTS'])

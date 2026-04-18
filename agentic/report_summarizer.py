@@ -88,7 +88,16 @@ Section guidelines:
 
   TIER 5 — STRATEGIC RECOMMENDATIONS: Long-term program improvements — vulnerability management program, patch management cadence, WAF deployment, security monitoring, regular penetration testing schedule, security header policy, certificate lifecycle management, secret rotation policies, JavaScript supply chain security, threat intelligence integration.
 
-  The output must be LONG and DETAILED — every CVE must be mentioned by ID, every finding must be addressed with specific remediation steps. Do not summarize or skip items. If there are 20 CVEs, discuss all 20. If there are 5 findings, discuss all 5. This section should be the longest section in the entire report. Write in flowing prose paragraphs, not bullet points."""
+  The output must be LONG and DETAILED — every CVE must be mentioned by ID, every finding must be addressed with specific remediation steps. Do not summarize or skip items. If there are 20 CVEs, discuss all 20. If there are 5 findings, discuss all 5. This section should be the longest section in the entire report. Write in flowing prose paragraphs, not bullet points.
+
+FIRETEAM (multi-agent) ATTRIBUTION GUIDANCE:
+When the input data includes a `fireteams` object with one or more deployments, reference specific fireteam members in your narratives. For example: "The Web Tester member confirmed two critical SQL injection vectors on the login endpoint, while the SSH Analyst independently identified an outdated OpenSSH version and flagged it for patching." This gives the reader visibility into which specialist reasoning produced each finding and builds operator confidence.
+
+Rules:
+- Only use member names that appear verbatim in the input data. Do not invent member names.
+- Use attribution only when `fireteams` is present and non-empty. Engagements without multi-agent activity should read normally without this framing.
+- In recommendationsNarrative: if multiple members converged on overlapping findings (same CVE on same host discovered by more than one member), consolidate the remediation and note the cross-specialist convergence — this increases operator confidence in the severity rating.
+- In executiveSummary: a single sentence acknowledging fireteam parallelism is sufficient; do not over-emphasize the method."""
 
 
 async def generate_report_narratives(

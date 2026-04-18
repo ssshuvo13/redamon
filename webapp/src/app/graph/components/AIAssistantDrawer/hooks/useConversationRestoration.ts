@@ -176,6 +176,15 @@ export function useConversationRestoration(deps: ConversationRestorationDeps) {
           error: data.error || null,
         } as Message
       } else if (msg.type === 'thinking') {
+        // Drop deploy_fireteam thinks: their rationale is already surfaced
+        // on the FireteamCard as plan_rationale, so keeping a standalone
+        // ThinkingItem would duplicate the same text on the chat timeline
+        // (once before the card, once inside). This was the source of the
+        // "two identical thoughts, one at top, one at bottom" confusion on
+        // session restore — especially for waves whose fireteam row never
+        // persisted (cancelled before the deploy POST landed), which left
+        // an orphaned thinking with no card to anchor to.
+        if (data.action === 'deploy_fireteam') return null
         return {
           type: 'thinking',
           id: msg.id,
@@ -539,6 +548,232 @@ export function useConversationRestoration(deps: ConversationRestorationDeps) {
           recommended_next_steps: data.recommended_next_steps || [],
         }
       }
+    }
+
+    // Fetch fireteams for this session and append as FireteamItem[].
+    // We do this in parallel with the message restore: the fireteams API
+    // gives us a snapshot of all deployments and their members so the UI
+    // can rebuild per-member panels on resume without replaying every
+    // streaming event.
+    try {
+      const ftRes = await fetch(`/api/conversations/by-session/${conv.sessionId}/fireteams`)
+      if (ftRes.ok) {
+        const { fireteams } = await ftRes.json()
+        if (Array.isArray(fireteams) && fireteams.length > 0) {
+          for (const f of fireteams) {
+            const startedAt = f.startedAt ? new Date(f.startedAt) : new Date()
+            const completedAt = f.completedAt ? new Date(f.completedAt) : undefined
+            restored.push({
+              type: 'fireteam',
+              id: f.fireteamIdKey,
+              fireteam_id: f.fireteamIdKey,
+              iteration: f.iteration ?? 0,
+              plan_rationale: f.planRationale ?? '',
+              timestamp: startedAt,
+              started_at: startedAt,
+              completed_at: completedAt,
+              status: ((): any => {
+                const s = f.status || 'running'
+                return ['running', 'completed', 'timeout', 'cancelled', 'failed'].includes(s) ? s : 'completed'
+              })(),
+              status_counts: f.statusCounts ?? undefined,
+              wall_clock_seconds: f.wallClockSeconds ?? undefined,
+              members: (f.members ?? []).map((m: any) => ({
+                member_id: m.memberIdKey,
+                name: m.name,
+                task: m.task ?? '',
+                skills: m.skills ?? [],
+                status: m.status,
+                started_at: m.startedAt ? new Date(m.startedAt) : startedAt,
+                completed_at: m.completedAt ? new Date(m.completedAt) : undefined,
+                tools: [],
+                planWaves: [],
+                iterations_used: m.iterationsUsed ?? 0,
+                tokens_used: m.tokensUsed ?? 0,
+                findings_count: m.findingsCount ?? 0,
+                completion_reason: m.completionReason ?? undefined,
+                error_message: m.errorMessage ?? undefined,
+              })),
+            } as any)
+          }
+        }
+      }
+    } catch (e) {
+      console.warn('[fireteam] restore fetch failed:', e)
+    }
+
+    // ---- Replay fireteam-scoped ChatMessage rows into member panels ----
+    //
+    // Each streamed event (tool_start/complete, plan_start/complete, thinking,
+    // awaiting_confirmation) was persisted with memberIdKey + fireteamIdKey on
+    // the ChatMessage row. The fireteams fetch above rebuilds member
+    // headers + final counts; this pass replays the per-member events so the
+    // card shows its tool history, plan waves, latest thought, and live
+    // sub-step counter just like during the live run.
+    try {
+      const ftIndex = new Map<string, number>()
+      for (let i = 0; i < restored.length; i++) {
+        const it = restored[i] as any
+        if (it && it.type === 'fireteam') ftIndex.set(it.fireteam_id, i)
+      }
+      const mutate = (ftId: string | null | undefined, mId: string | null | undefined, fn: (m: any) => any) => {
+        if (!ftId || !mId) return
+        const idx = ftIndex.get(ftId)
+        if (idx === undefined) return
+        const ft = restored[idx] as any
+        const mIdx = ft.members.findIndex((m: any) => m.member_id === mId)
+        if (mIdx < 0) return
+        ft.members[mIdx] = fn(ft.members[mIdx])
+      }
+
+      for (const msg of full.messages as any[]) {
+        const ftId = msg.fireteamIdKey
+        const mId = msg.memberIdKey
+        if (!ftId || !mId) continue
+        const d = msg.data || {}
+        const ts = new Date(msg.createdAt)
+        switch (msg.type) {
+          case 'fireteam_thinking':
+            mutate(ftId, mId, m => ({
+              ...m,
+              latest_thought: (d.thought || d.reasoning || '').slice(0, 240),
+              latest_iteration: d.iteration ?? m.latest_iteration,
+            }))
+            break
+          case 'fireteam_plan_start': {
+            const planId = `ft-restore-plan-${ftId}-${mId}-${d.wave_id || msg.id}`
+            mutate(ftId, mId, m => ({
+              ...m,
+              planWaves: [
+                ...m.planWaves,
+                {
+                  type: 'plan_wave' as const,
+                  id: planId,
+                  timestamp: ts,
+                  wave_id: d.wave_id || '',
+                  plan_rationale: d.plan_rationale || '',
+                  tool_count: (d.tools || []).length,
+                  tools: [],
+                  status: 'running' as const,
+                },
+              ],
+            }))
+            break
+          }
+          case 'fireteam_plan_complete': {
+            mutate(ftId, mId, m => {
+              const idx = m.planWaves.findIndex((w: any) => w.wave_id === d.wave_id)
+              if (idx < 0) return m
+              const failed = d.failed ?? 0
+              const successful = d.successful ?? 0
+              const total = d.total ?? (failed + successful)
+              let status: 'success' | 'error' | 'partial' = 'success'
+              if (failed === total && total > 0) status = 'error'
+              else if (failed > 0) status = 'partial'
+              const nextWaves = m.planWaves.slice()
+              nextWaves[idx] = { ...nextWaves[idx], status }
+              return { ...m, planWaves: nextWaves }
+            })
+            break
+          }
+          case 'fireteam_tool_start': {
+            const newTool = {
+              type: 'tool_execution' as const,
+              id: `ft-restore-tool-${msg.id}`,
+              timestamp: ts,
+              tool_name: d.tool_name || '',
+              tool_args: d.tool_args || {},
+              status: 'running' as const,
+              output_chunks: [] as string[],
+              step_index: d.step_index ?? undefined,
+            }
+            mutate(ftId, mId, m => {
+              if (d.wave_id) {
+                const idx = m.planWaves.findIndex((w: any) => w.wave_id === d.wave_id)
+                if (idx >= 0) {
+                  const nextWaves = m.planWaves.slice()
+                  nextWaves[idx] = { ...nextWaves[idx], tools: [...nextWaves[idx].tools, newTool] }
+                  return { ...m, planWaves: nextWaves }
+                }
+              }
+              return { ...m, tools: [...m.tools, newTool] }
+            })
+            break
+          }
+          case 'fireteam_tool_complete': {
+            mutate(ftId, mId, m => {
+              const patch = (t: any) => ({
+                ...t,
+                status: d.success ? 'success' : 'error',
+                duration: d.duration_ms,
+                final_output: d.output_excerpt,
+              })
+              // Nested in plan wave?
+              if (d.wave_id) {
+                const wi = m.planWaves.findIndex((w: any) => w.wave_id === d.wave_id)
+                if (wi >= 0) {
+                  const wave = m.planWaves[wi]
+                  for (let ti = wave.tools.length - 1; ti >= 0; ti--) {
+                    if (wave.tools[ti].tool_name === d.tool_name && wave.tools[ti].status === 'running') {
+                      const nextTools = wave.tools.slice()
+                      nextTools[ti] = patch(nextTools[ti])
+                      const nextWaves = m.planWaves.slice()
+                      nextWaves[wi] = { ...wave, tools: nextTools }
+                      return { ...m, planWaves: nextWaves }
+                    }
+                  }
+                }
+              }
+              // Otherwise mutate a standalone member tool.
+              for (let ti = m.tools.length - 1; ti >= 0; ti--) {
+                if (m.tools[ti].tool_name === d.tool_name && m.tools[ti].status === 'running') {
+                  const nextTools = m.tools.slice()
+                  nextTools[ti] = patch(nextTools[ti])
+                  return { ...m, tools: nextTools }
+                }
+              }
+              return m
+            })
+            break
+          }
+          case 'fireteam_member_awaiting_confirmation': {
+            // Render a persistent "pending approval" card inside the member
+            // panel so operators who reconnect still see the pending request.
+            // Once resumed post-decision, the subsequent tool_start events
+            // replace the card with real tool cards.
+            const pendingId = `ft-restore-await-${msg.id}`
+            mutate(ftId, mId, m => ({
+              ...m,
+              status: 'needs_confirmation',
+              planWaves: [
+                ...m.planWaves,
+                {
+                  type: 'plan_wave' as const,
+                  id: pendingId,
+                  timestamp: ts,
+                  wave_id: '',
+                  plan_rationale: d.reasoning || '',
+                  tool_count: (d.tools || []).length,
+                  tools: (d.tools || []).map((t: any, idx: number) => ({
+                    type: 'tool_execution' as const,
+                    id: `${pendingId}-${idx}`,
+                    timestamp: ts,
+                    tool_name: t.tool_name || '',
+                    tool_args: t.tool_args || {},
+                    status: 'pending_approval' as const,
+                    output_chunks: [] as string[],
+                  })),
+                  status: 'pending_approval' as const,
+                  isFireteamEscalation: true,
+                },
+              ],
+            }))
+            break
+          }
+        }
+      }
+    } catch (e) {
+      console.warn('[fireteam] per-member replay failed:', e)
     }
 
     // Sort by timestamp

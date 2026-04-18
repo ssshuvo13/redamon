@@ -1075,9 +1075,9 @@
   color: var(--text-primary);
   font-size: var(--text-sm);
   font-family: inherit;
-  resize: none;
+  resize: vertical;
   min-height: 20px;
-  max-height: 120px;
+  max-height: 50vh;
   line-height: var(--leading-normal);
   padding: 4px 0;
 }

@@ -6,9 +6,32 @@ import {
   type ApprovalRequestPayload,
   type QuestionRequestPayload,
   type ToolConfirmationRequestPayload,
+  type FireteamDeployedPayload,
+  type FireteamMemberStartedPayload,
+  type FireteamThinkingPayload,
+  type FireteamToolStartPayload,
+  type FireteamToolOutputChunkPayload,
+  type FireteamToolCompletePayload,
+  type FireteamPlanStartPayload,
+  type FireteamPlanCompletePayload,
+  type FireteamMemberCompletedPayload,
+  type FireteamCompletedPayload,
+  type FireteamMemberAwaitingConfirmationPayload,
 } from '@/lib/websocket-types'
-import type { ChatItem, Message, FileDownloadItem, Phase } from '../types'
+import type { ChatItem, Message, FileDownloadItem, Phase, FireteamItem, FireteamMemberPanel } from '../types'
 import type { ThinkingItem, ToolExecutionItem, PlanWaveItem, DeepThinkItem } from '../AgentTimeline'
+import {
+  handleFireteamDeployed,
+  handleFireteamMemberStarted,
+  handleFireteamThinking,
+  handleFireteamToolStart,
+  handleFireteamToolOutputChunk,
+  handleFireteamToolComplete,
+  handleFireteamPlanStart,
+  handleFireteamPlanComplete,
+  handleFireteamMemberCompleted,
+  handleFireteamCompleted,
+} from './fireteamChatState'
 
 interface WebSocketHandlerDeps {
   // From useChatState
@@ -37,6 +60,10 @@ interface WebSocketHandlerDeps {
   isProcessingToolConfirmation: React.MutableRefObject<boolean>
   pendingApprovalToolId: React.MutableRefObject<string | null>
   pendingApprovalWaveId: React.MutableRefObject<string | null>
+  // Fired after events that may have written new nodes to the graph DB
+  // (TOOL_COMPLETE, FIRETEAM_TOOL_COMPLETE, TASK_COMPLETE, FIRETEAM_COMPLETED).
+  // Debounced internally so concurrent wave tools coalesce into one refetch.
+  onGraphMutation?: () => void
 }
 
 export function useWebSocketHandler(deps: WebSocketHandlerDeps) {
@@ -51,11 +78,28 @@ export function useWebSocketHandler(deps: WebSocketHandlerDeps) {
     awaitingQuestionRef, isProcessingQuestion,
     awaitingToolConfirmationRef, isProcessingToolConfirmation,
     pendingApprovalToolId, pendingApprovalWaveId,
+    onGraphMutation,
   } = deps
 
   // Use a ref to avoid recreating the callback when todoList changes
   const todoListRef = useRef(todoList)
   useEffect(() => { todoListRef.current = todoList }, [todoList])
+
+  // Debounced graph-refetch trigger. Ref-held so the stable handleWebSocketMessage
+  // callback (deps: []) always hits the latest onGraphMutation.
+  const onGraphMutationRef = useRef(onGraphMutation)
+  useEffect(() => { onGraphMutationRef.current = onGraphMutation }, [onGraphMutation])
+  const graphRefetchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const triggerGraphRefetch = useCallback(() => {
+    if (graphRefetchTimerRef.current) clearTimeout(graphRefetchTimerRef.current)
+    graphRefetchTimerRef.current = setTimeout(() => {
+      graphRefetchTimerRef.current = null
+      onGraphMutationRef.current?.()
+    }, 500)
+  }, [])
+  useEffect(() => () => {
+    if (graphRefetchTimerRef.current) clearTimeout(graphRefetchTimerRef.current)
+  }, [])
 
   const handleWebSocketMessage = useCallback((message: ServerMessage) => {
     switch (message.type) {
@@ -63,6 +107,18 @@ export function useWebSocketHandler(deps: WebSocketHandlerDeps) {
         break
 
       case MessageType.THINKING: {
+        // Suppress `deploy_fireteam` thinking cards: the FireteamCard that
+        // arrives immediately after carries the same thought+reasoning as
+        // `plan_rationale`, so rendering a ThinkingItem before the card
+        // duplicates the text. (Before this guard, users saw the exact same
+        // thought twice in a row at the top of the chat.)
+        if (message.payload.action === 'deploy_fireteam') {
+          if (!awaitingToolConfirmationRef.current && !awaitingApprovalRef.current && !awaitingQuestionRef.current) {
+            setIsLoading(true)
+          }
+          setIsStopped(false)
+          break
+        }
         const thinkingItem: ThinkingItem = {
           type: 'thinking',
           id: `thinking-${Date.now()}-${itemIdCounter.current++}`,
@@ -309,6 +365,7 @@ export function useWebSocketHandler(deps: WebSocketHandlerDeps) {
           })
           setIsLoading(false)
         }
+        triggerGraphRefetch()
         break
       }
 
@@ -431,6 +488,84 @@ export function useWebSocketHandler(deps: WebSocketHandlerDeps) {
 
         const confMode = message.payload.mode || 'single'
         const confTools = message.payload.tools || []
+        const escalatedAgentId = (message.payload as any).agent_id || null
+        const escalatedAgentName = (message.payload as any).agent_name || null
+        const isFireteamEscalation = Boolean(
+          confMode === 'fireteam_escalation' || escalatedAgentId || escalatedAgentName,
+        )
+
+        // Fireteam escalations render INSIDE the matching member panel instead
+        // of as a top-level plan_wave, so the approval UI stays grouped with
+        // the agent that asked. See FIRETEAM.md §26.10.
+        if (isFireteamEscalation) {
+          const waveId = `wave-conf-${Date.now()}-${itemIdCounter.current++}`
+          pendingApprovalWaveId.current = waveId
+          pendingApprovalToolId.current = null
+          const pendingTools: ToolExecutionItem[] = confTools.map((t: any, idx: number) => ({
+            type: 'tool_execution' as const,
+            id: `tool-conf-${Date.now()}-${idx}-${itemIdCounter.current++}`,
+            timestamp: new Date(),
+            tool_name: t.tool_name || '',
+            tool_args: t.tool_args || {},
+            status: 'pending_approval' as const,
+            output_chunks: [],
+          }))
+          const waveItem: PlanWaveItem = {
+            type: 'plan_wave',
+            id: waveId,
+            timestamp: new Date(),
+            wave_id: '',
+            plan_rationale: message.payload.reasoning || '',
+            tool_count: confTools.length,
+            tools: pendingTools,
+            status: 'pending_approval',
+            isFireteamEscalation: true,
+          }
+          setChatItems((prev: ChatItem[]) => {
+            // Find the most recent FireteamItem and inject the pending wave
+            // into the matching member's panel. Fall back to top-level only
+            // if no open fireteam or member match is found.
+            let injected = false
+            const next = prev.slice()
+            for (let i = next.length - 1; i >= 0 && !injected; i--) {
+              const it = next[i]
+              if (!('type' in it) || it.type !== 'fireteam') continue
+              const ft = it as FireteamItem
+              const memberIdx = ft.members.findIndex((m: FireteamMemberPanel) =>
+                (escalatedAgentId && m.member_id === escalatedAgentId)
+                || (escalatedAgentName && m.name === escalatedAgentName),
+              )
+              if (memberIdx < 0) continue
+              const member = ft.members[memberIdx]
+              const updatedMember: FireteamMemberPanel = {
+                ...member,
+                status: 'needs_confirmation',
+                planWaves: [...member.planWaves, waveItem],
+              }
+              const updatedFt: FireteamItem = {
+                ...ft,
+                members: [
+                  ...ft.members.slice(0, memberIdx),
+                  updatedMember,
+                  ...ft.members.slice(memberIdx + 1),
+                ],
+              }
+              next[i] = updatedFt
+              injected = true
+            }
+            if (!injected) {
+              // No matching fireteam member. Render at top level so the
+              // operator can still approve/reject, but log so the mismatch is
+              // visible when debugging.
+              console.warn('[fireteam] escalation with no matching member panel', {
+                agentId: escalatedAgentId, agentName: escalatedAgentName,
+              })
+              return [...prev, waveItem]
+            }
+            return next
+          })
+          break
+        }
 
         if (confMode === 'plan') {
           const waveId = `wave-conf-${Date.now()}-${itemIdCounter.current++}`
@@ -491,6 +626,119 @@ export function useWebSocketHandler(deps: WebSocketHandlerDeps) {
         break
       }
 
+      // ---------------- Fireteam (multi-agent) events ----------------
+
+      case MessageType.FIRETEAM_DEPLOYED: {
+        const p = message.payload as FireteamDeployedPayload
+        setChatItems(prev => handleFireteamDeployed(prev, p))
+        break
+      }
+      case MessageType.FIRETEAM_MEMBER_STARTED: {
+        const p = message.payload as FireteamMemberStartedPayload
+        setChatItems(prev => handleFireteamMemberStarted(prev, p))
+        break
+      }
+      case MessageType.FIRETEAM_THINKING: {
+        const p = message.payload as FireteamThinkingPayload
+        setChatItems(prev => handleFireteamThinking(prev, p))
+        break
+      }
+      case MessageType.FIRETEAM_TOOL_START: {
+        const p = message.payload as FireteamToolStartPayload
+        setChatItems(prev => handleFireteamToolStart(prev, p))
+        break
+      }
+      case MessageType.FIRETEAM_TOOL_OUTPUT_CHUNK: {
+        const p = message.payload as FireteamToolOutputChunkPayload
+        setChatItems(prev => handleFireteamToolOutputChunk(prev, p))
+        break
+      }
+      case MessageType.FIRETEAM_TOOL_COMPLETE: {
+        const p = message.payload as FireteamToolCompletePayload
+        setChatItems(prev => handleFireteamToolComplete(prev, p))
+        triggerGraphRefetch()
+        break
+      }
+      case MessageType.FIRETEAM_PLAN_START: {
+        const p = message.payload as FireteamPlanStartPayload
+        setChatItems(prev => handleFireteamPlanStart(prev, p))
+        break
+      }
+      case MessageType.FIRETEAM_PLAN_COMPLETE: {
+        const p = message.payload as FireteamPlanCompletePayload
+        setChatItems(prev => handleFireteamPlanComplete(prev, p))
+        break
+      }
+      case MessageType.FIRETEAM_MEMBER_COMPLETED: {
+        const p = message.payload as FireteamMemberCompletedPayload
+        setChatItems(prev => handleFireteamMemberCompleted(prev, p))
+        break
+      }
+      case MessageType.FIRETEAM_COMPLETED: {
+        const p = message.payload as FireteamCompletedPayload
+        setChatItems(prev => handleFireteamCompleted(prev, p))
+        triggerGraphRefetch()
+        break
+      }
+
+      case MessageType.FIRETEAM_MEMBER_AWAITING_CONFIRMATION: {
+        const p = message.payload as FireteamMemberAwaitingConfirmationPayload
+        const waveId = `ft-await-${Date.now()}-${itemIdCounter.current++}`
+        const pendingTools: ToolExecutionItem[] = (p.tools || []).map((t, idx) => ({
+          type: 'tool_execution' as const,
+          id: `tool-conf-${Date.now()}-${idx}-${itemIdCounter.current++}`,
+          timestamp: new Date(),
+          tool_name: t.tool_name || '',
+          tool_args: t.tool_args || {},
+          status: 'pending_approval' as const,
+          output_chunks: [],
+        }))
+        const pendingWave: PlanWaveItem = {
+          type: 'plan_wave',
+          id: waveId,
+          timestamp: new Date(),
+          wave_id: '',
+          plan_rationale: p.reasoning || '',
+          tool_count: pendingTools.length,
+          tools: pendingTools,
+          status: 'pending_approval',
+          isFireteamEscalation: true,
+        }
+        // Inject into the matching member's panel inside the live fireteam.
+        // Does NOT set awaitingToolConfirmation/isLoading: other members keep
+        // running in parallel; we only want to present the confirmation card
+        // inline on the single member that asked.
+        setChatItems((prev: ChatItem[]) => {
+          const next = prev.slice()
+          for (let i = next.length - 1; i >= 0; i--) {
+            const it = next[i]
+            if (!('type' in it) || it.type !== 'fireteam') continue
+            const ft = it as FireteamItem
+            if (ft.fireteam_id !== p.fireteam_id && ft.fireteam_id !== p.wave_id) continue
+            const memberIdx = ft.members.findIndex((m: FireteamMemberPanel) => m.member_id === p.member_id)
+            if (memberIdx < 0) continue
+            const member = ft.members[memberIdx]
+            const updatedMember: FireteamMemberPanel = {
+              ...member,
+              status: 'needs_confirmation',
+              planWaves: [...member.planWaves, pendingWave],
+            }
+            next[i] = {
+              ...ft,
+              members: [
+                ...ft.members.slice(0, memberIdx),
+                updatedMember,
+                ...ft.members.slice(memberIdx + 1),
+              ],
+            }
+            return next
+          }
+          console.warn('[fireteam] awaiting_confirmation for unknown wave/member', p)
+          return prev
+        })
+        break
+      }
+
       case MessageType.RESPONSE: {
         const tier = message.payload.response_tier || (message.payload.task_complete ? 'full_report' : 'conversational')
         const assistantMessage: Message = {
@@ -533,6 +781,7 @@ export function useWebSocketHandler(deps: WebSocketHandlerDeps) {
         }
         setChatItems(prev => [...prev, completeMessage])
         setIsLoading(false)
+        triggerGraphRefetch()
         break
       }
 

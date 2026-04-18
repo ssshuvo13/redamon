@@ -1,5 +1,5 @@
 import { useCallback } from 'react'
-import type { ChatItem } from '../types'
+import type { ChatItem, FireteamItem } from '../types'
 import type { PlanWaveItem } from '../AgentTimeline'
 import type { TodoItem } from '@/lib/websocket-types'
 import { PHASE_CONFIG, formatModelDisplay } from '../phaseConfig'
@@ -245,6 +245,98 @@ export function useDownloadMarkdown(deps: DownloadMarkdownDeps) {
           waveItem.recommended_next_steps.forEach(s => lines.push(`- ${s}`))
           lines.push('')
         }
+        lines.push('---')
+        lines.push('')
+      } else if (item.type === 'fireteam') {
+        const ft = item as FireteamItem
+        const time = ft.timestamp.toLocaleTimeString()
+        const wall = ft.wall_clock_seconds !== undefined ? ` · ${ft.wall_clock_seconds.toFixed(1)}s` : ''
+        lines.push(`### Fireteam — ${ft.members.length} members  \`${time}\`  [${ft.status.toUpperCase()}${wall}]`)
+        lines.push('')
+        if (ft.plan_rationale) {
+          lines.push(`> ${ft.plan_rationale}`)
+          lines.push('')
+        }
+        if (ft.status_counts && Object.keys(ft.status_counts).length > 0) {
+          const counts = Object.entries(ft.status_counts)
+            .map(([k, v]) => `${v} ${k}`).join(' · ')
+          lines.push(`**Status counts:** ${counts}`)
+          lines.push('')
+        }
+        ft.members.forEach(m => {
+          lines.push(`#### Member: ${m.name}  \`${m.member_id}\`  [${m.status.toUpperCase()}]`)
+          lines.push('')
+          if (m.task) {
+            lines.push(`> ${m.task}`)
+            lines.push('')
+          }
+          const meta: string[] = []
+          if (m.skills && m.skills.length > 0) meta.push(`skills: ${m.skills.join(', ')}`)
+          if (m.iterations_used > 0) meta.push(`${m.iterations_used} iter`)
+          if (m.tokens_used > 0) meta.push(`${m.tokens_used} tok`)
+          const toolCount = (m.tools?.length || 0)
+            + (m.planWaves?.reduce((n, w) => n + (w.tools?.length || 0), 0) || 0)
+          if (toolCount > 0) meta.push(`${toolCount} tools`)
+          if (m.findings_count > 0) meta.push(`${m.findings_count} findings`)
+          if (meta.length > 0) {
+            lines.push(`*${meta.join(' · ')}*`)
+            lines.push('')
+          }
+          if (m.completion_reason && m.status !== 'success') {
+            lines.push(`**Completion reason:** ${m.completion_reason}`)
+            lines.push('')
+          }
+          if (m.error_message) {
+            lines.push(`> **Error:** ${m.error_message}`)
+            lines.push('')
+          }
+          if (m.latest_thought) {
+            lines.push(`*Latest thought:* ${m.latest_thought}`)
+            lines.push('')
+          }
+          // Render member's tool calls
+          m.tools?.forEach(tool => {
+            const toolStatusIcon = tool.status === 'success' ? 'OK' : tool.status === 'error' ? 'FAIL' : 'RUNNING'
+            lines.push(`##### Tool: \`${tool.tool_name}\`  [${toolStatusIcon}]`)
+            lines.push('')
+            if (tool.tool_args && Object.keys(tool.tool_args).length > 0) {
+              Object.entries(tool.tool_args).forEach(([k, v]) => {
+                lines.push(`- **${k}:** \`${typeof v === 'string' ? v : JSON.stringify(v)}\``)
+              })
+              lines.push('')
+            }
+            const rawOutput = tool.output_chunks?.join('') || ''
+            if (rawOutput) {
+              lines.push('<details><summary>Raw Output</summary>')
+              lines.push('')
+              lines.push('```')
+              lines.push(rawOutput)
+              lines.push('```')
+              lines.push('')
+              lines.push('</details>')
+              lines.push('')
+            }
+            if (tool.final_output) {
+              lines.push(tool.final_output)
+              lines.push('')
+            }
+          })
+          // Render member's nested plan waves
+          m.planWaves?.forEach(wave => {
+            const waveStatus = wave.status === 'success' ? 'OK' : wave.status === 'error' ? 'FAIL' : wave.status === 'partial' ? 'PARTIAL' : 'RUNNING'
+            lines.push(`##### Plan Wave — ${wave.tool_count} tools  [${waveStatus}]`)
+            lines.push('')
+            if (wave.plan_rationale) {
+              lines.push(`> ${wave.plan_rationale}`)
+              lines.push('')
+            }
+            wave.tools?.forEach(tool => {
+              const toolStatusIcon = tool.status === 'success' ? 'OK' : tool.status === 'error' ? 'FAIL' : 'RUNNING'
+              lines.push(`- \`${tool.tool_name}\` [${toolStatusIcon}]`)
+            })
+            lines.push('')
+          })
+        })
         lines.push('---')
         lines.push('')
       } else if (item.type === 'file_download') {

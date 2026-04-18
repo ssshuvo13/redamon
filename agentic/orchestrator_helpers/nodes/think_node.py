@@ -23,6 +23,7 @@ from state import (
     utc_now,
 )
 import orchestrator_helpers.chain_graph_writer as chain_graph
+from orchestrator_helpers.agent_context import get_agent_context
 from orchestrator_helpers.json_utils import json_dumps_safe, normalize_content
 from orchestrator_helpers.parsing import try_parse_llm_decision
 from orchestrator_helpers.config import get_identifiers, is_session_config_complete
@@ -42,6 +43,7 @@ from prompts import (
     build_tool_name_enum,
     build_tool_args_section,
 )
+from prompts.base import build_fireteam_prompt_fragments
 from utils import get_session_config_prompt
 from tools import set_tenant_context, set_phase_context, set_graph_view_context
 
@@ -228,6 +230,17 @@ async def think_node(state: AgentState, config, *, llm, guidance_queues, neo4j_c
 
     allowed_tools = get_allowed_tools_for_phase(phase)
 
+    # Conditionally render the deploy_fireteam action based on project gates.
+    # When FIRETEAM_ENABLED=false OR current phase not in allowed phases, the
+    # three fragments are empty strings so the LLM never sees the action —
+    # saves ~500 tokens per call and avoids the LLM emitting a gated action.
+    ft_action_enum, ft_plan_field, ft_example = build_fireteam_prompt_fragments(
+        enabled=get_setting("FIRETEAM_ENABLED", False)
+                and get_setting("PERSISTENT_CHECKPOINTER", False),
+        phase=phase,
+        allowed_phases=get_setting("FIRETEAM_ALLOWED_PHASES", ["informational"]),
+    )
+
     system_prompt = REACT_SYSTEM_PROMPT.format(
         current_phase=phase,
         phase_definitions=build_phase_definitions(),
@@ -246,6 +259,9 @@ async def think_node(state: AgentState, config, *, llm, guidance_queues, neo4j_c
         todo_list=todo_list_formatted,
         target_info=target_info_formatted,
         qa_history=qa_history_formatted,
+        fireteam_action_enum=ft_action_enum,
+        fireteam_plan_field=ft_plan_field,
+        fireteam_example_section=ft_example,
     )
 
     # Inject Deep Think section if available (from state or just computed)
@@ -505,6 +521,30 @@ async def think_node(state: AgentState, config, *, llm, guidance_queues, neo4j_c
     else:
         logger.info(f"Q&A HISTORY: (none)")
 
+    # Fireteam gate: enforce feature-flag + persistent-checkpointer + allowed-phases.
+    # If the LLM emitted deploy_fireteam but any gate fails, rewrite the action
+    # to use_tool without a tool (so _route_after_think routes safely). The
+    # system note is injected after `updates` is constructed below.
+    _fireteam_gate_note: str | None = None
+    if decision.action == "deploy_fireteam":
+        ft_enabled = get_setting("FIRETEAM_ENABLED", False)
+        persistent = get_setting("PERSISTENT_CHECKPOINTER", False)
+        allowed_phases = get_setting("FIRETEAM_ALLOWED_PHASES", ["informational"])
+        if not ft_enabled:
+            _fireteam_gate_note = "fireteam feature disabled for this project"
+        elif not persistent:
+            _fireteam_gate_note = "persistent checkpointer required (PERSISTENT_CHECKPOINTER=false); fireteam cannot run safely without it"
+        elif phase not in allowed_phases:
+            _fireteam_gate_note = f"phase '{phase}' not in allowed phases {allowed_phases}"
+        if _fireteam_gate_note:
+            logger.warning(f"[{user_id}/{project_id}/{session_id}] deploy_fireteam rejected: {_fireteam_gate_note}")
+            decision = decision.model_copy(update={
+                "action": "use_tool",
+                "tool_name": None,
+                "tool_args": None,
+                "fireteam_plan": None,
+            })
+
     # Log user_question if action is ask_user
     if decision.action == "ask_user" and decision.user_question:
         logger.info(f"USER_QUESTION:")
@@ -540,6 +580,15 @@ async def think_node(state: AgentState, config, *, llm, guidance_queues, neo4j_c
         "_completed_step": None,  # Will be set if we process pending output
     }
 
+    # Inject fireteam-gate rejection note so the LLM doesn't just re-emit
+    # deploy_fireteam on the next iteration. Use HumanMessage to represent
+    # operator/system feedback mid-conversation (AIMessage would model the
+    # LLM's own past output, which is semantically wrong).
+    if _fireteam_gate_note:
+        updates["messages"] = [HumanMessage(
+            content=f"[system] deploy_fireteam rejected: {_fireteam_gate_note}. Choose use_tool, plan_tools, transition_phase, or complete instead."
+        )]
+
     # Persist deep think result in state (only when newly triggered)
     if deep_think_triggered:
         updates["deep_think_result"] = deep_think_result
@@ -547,13 +596,20 @@ async def think_node(state: AgentState, config, *, llm, guidance_queues, neo4j_c
     # Persist LLM self-request for deep think (triggers on next iteration)
     updates["_need_deep_think"] = decision.need_deep_think if get_setting('DEEP_THINK_ENABLED', False) else False
 
-    # When action is plan_tools, set _current_plan instead of _current_step
+    # When action is plan_tools, set _current_plan instead of _current_step.
+    # When action is deploy_fireteam, set _current_fireteam_plan.
     if decision.action == "plan_tools" and decision.tool_plan:
         updates["_current_step"] = None  # No single step — plan node handles streaming
         updates["_current_plan"] = decision.tool_plan.model_dump()
+        updates["_current_fireteam_plan"] = None
+    elif decision.action == "deploy_fireteam" and decision.fireteam_plan:
+        updates["_current_step"] = None
+        updates["_current_plan"] = None
+        updates["_current_fireteam_plan"] = decision.fireteam_plan.model_dump()
     else:
         updates["_current_step"] = step.model_dump()
         updates["_current_plan"] = None  # Clear any stale plan
+        updates["_current_fireteam_plan"] = None
 
     # Process output analysis if we had pending tool output
     if has_pending_output:
@@ -663,6 +719,7 @@ async def think_node(state: AgentState, config, *, llm, guidance_queues, neo4j_c
                     success=pending_step.get("success", True),
                     error_message=pending_step.get("error_message"),
                     extracted_info=analysis.extracted_info.model_dump() if analysis and analysis.extracted_info else {},
+                    **get_agent_context(state),
                 ),
             )
             updates["_last_chain_step_id"] = step_id
@@ -697,6 +754,7 @@ async def think_node(state: AgentState, config, *, llm, guidance_queues, neo4j_c
             for cf in (analysis.chain_findings or []):
                 if analysis.exploit_succeeded and cf.finding_type in _EXPLOIT_OVERLAP_TYPES:
                     continue
+                _ctx = get_agent_context(state)
                 chain_graph.fire_record_finding(
                     neo4j_uri, neo4j_user, neo4j_password,
                     chain_id=session_id, step_id=step_id,
@@ -706,6 +764,9 @@ async def think_node(state: AgentState, config, *, llm, guidance_queues, neo4j_c
                     confidence=cf.confidence, phase=phase,
                     iteration=step_iteration,
                     related_cves=cf.related_cves, related_ips=cf.related_ips,
+                    agent_id=_ctx["agent_id"],
+                    source_agent=_ctx["agent_name"],
+                    fireteam_id=_ctx["fireteam_id"],
                 )
 
             # 6. Fire-and-forget: write ChainFailure if failed
@@ -862,11 +923,13 @@ async def think_node(state: AgentState, config, *, llm, guidance_queues, neo4j_c
 
             # Neo4j chain step (sync so prev_step_id linkage is sequential)
             # Capture all loop variables via default args to avoid closure issues
+            _ctx = get_agent_context(state)
             await loop.run_in_executor(
                 None,
                 lambda _sid=step_id, _prev=prev_chain_step_id, _ps=plan_step,
                        _ei=combined_extracted, _thought=step_thought,
-                       _reasoning=step_reasoning, _oa=step_output_analysis: chain_graph.sync_record_step(
+                       _reasoning=step_reasoning, _oa=step_output_analysis,
+                       _c=_ctx: chain_graph.sync_record_step(
                     neo4j_uri, neo4j_user, neo4j_password,
                     step_id=_sid,
                     chain_id=session_id,
@@ -882,6 +945,9 @@ async def think_node(state: AgentState, config, *, llm, guidance_queues, neo4j_c
                     success=_ps.get("success", False),
                     error_message=_ps.get("error_message"),
                     extracted_info=_ei,
+                    agent_id=_c["agent_id"],
+                    agent_name=_c["agent_name"],
+                    fireteam_id=_c["fireteam_id"],
                 ),
             )
             # Update prev for next tool in wave (sequential chain linkage)
@@ -933,6 +999,7 @@ async def think_node(state: AgentState, config, *, llm, guidance_queues, neo4j_c
             last_step_id = new_trace_entries[-1]["step_id"]
             # Skip exploit-related findings if exploit success already recorded (mirrors single-tool)
             _EXPLOIT_OVERLAP_TYPES = {"exploit_success", "access_gained", "credential_found"}
+            _ctx = get_agent_context(state)
             for cf in (analysis.chain_findings or []):
                 if analysis.exploit_succeeded and cf.finding_type in _EXPLOIT_OVERLAP_TYPES:
                     continue
@@ -945,6 +1012,9 @@ async def think_node(state: AgentState, config, *, llm, guidance_queues, neo4j_c
                     confidence=cf.confidence, phase=phase,
                     iteration=plan_iteration,
                     related_cves=cf.related_cves, related_ips=cf.related_ips,
+                    agent_id=_ctx["agent_id"],
+                    source_agent=_ctx["agent_name"],
+                    fireteam_id=_ctx["fireteam_id"],
                 )
 
         # Update state

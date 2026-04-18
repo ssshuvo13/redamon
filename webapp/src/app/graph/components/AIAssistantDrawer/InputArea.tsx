@@ -33,6 +33,9 @@ interface InputAreaProps {
   activeSkill: ActiveSkill | null
   setActiveSkill: (v: ActiveSkill | null) => void
   onSkillActivate: (skillId: string, skillName?: string) => Promise<any>
+  // Set to true when the user drags the native resize grip, so keystroke
+  // auto-grow stops fighting the user's chosen height until next send.
+  userResizedRef: React.MutableRefObject<boolean>
 }
 
 interface GroupedSkill {
@@ -72,6 +75,7 @@ export function InputArea({
   activeSkill,
   setActiveSkill,
   onSkillActivate,
+  userResizedRef,
 }: InputAreaProps) {
   const { alert: showAlert } = useAlertModal()
   const [skills, setSkills] = useState<ChatSkillSummary[]>([])
@@ -408,6 +412,14 @@ export function InputArea({
             value={inputValue}
             onChange={handleInputChange}
             onKeyDown={handleKeyDownInternal}
+            onMouseDown={(e) => {
+              // Native resize grip sits in the bottom-right corner (~16px).
+              // Flag the ref so keystroke auto-grow stops overriding the user's drag.
+              const rect = e.currentTarget.getBoundingClientRect()
+              if (e.clientX >= rect.right - 16 && e.clientY >= rect.bottom - 16) {
+                userResizedRef.current = true
+              }
+            }}
             placeholder={
               !isConnected
                 ? 'Connecting to agent...'

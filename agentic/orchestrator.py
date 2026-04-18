@@ -49,8 +49,14 @@ from orchestrator_helpers.nodes import (
     process_answer_node,
     await_tool_confirmation_node,
     process_tool_confirmation_node,
+    fireteam_deploy_node,
+    fireteam_collect_node,
+    process_fireteam_confirmation_node,
 )
+from orchestrator_helpers.fireteam_member_graph import build_fireteam_member_graph
 
+# Default checkpointer. Replaced with AsyncPostgresSaver inside
+# AgentOrchestrator.initialize() when PERSISTENT_CHECKPOINTER=true.
 checkpointer = MemorySaver()
 set_checkpointer(checkpointer)
 
@@ -105,10 +111,90 @@ class AgentOrchestrator:
         logger.info("Initializing AgentOrchestrator...")
 
         await self._setup_tools()
+        await self._setup_checkpointer()
         self._build_graph()
+        await self.recover_orphaned_fireteams()
         self._initialized = True
 
         logger.info("AgentOrchestrator initialized (LLM deferred until project settings loaded)")
+
+    async def recover_orphaned_fireteams(self) -> None:
+        """Mark fireteams from a prior process (still 'running') as cancelled.
+
+        Called once from the FastAPI lifespan after checkpointer setup. Uses
+        the Postgres pool directly to avoid round-tripping through the webapp
+        API for a startup-only maintenance task.
+        """
+        if not self._checkpoint_pool:
+            return
+        try:
+            async with self._checkpoint_pool.connection() as conn:
+                # Mark running members as cancelled if their fireteam is stale (>60s old).
+                await conn.execute(
+                    """
+                    UPDATE fireteam_members
+                    SET status = 'cancelled',
+                        completion_reason = 'backend_restart',
+                        completed_at = NOW()
+                    WHERE status = 'running'
+                      AND fireteam_id IN (
+                          SELECT id FROM fireteams
+                          WHERE status IN ('pending', 'running')
+                            AND started_at < NOW() - INTERVAL '60 seconds'
+                      )
+                    """
+                )
+                await conn.execute(
+                    """
+                    UPDATE fireteams
+                    SET status = 'cancelled',
+                        completed_at = NOW()
+                    WHERE status IN ('pending', 'running')
+                      AND started_at < NOW() - INTERVAL '60 seconds'
+                    """
+                )
+            logger.info("recover_orphaned_fireteams: stale fireteams and members marked cancelled")
+        except Exception as exc:
+            logger.warning("recover_orphaned_fireteams failed: %s", exc)
+
+    async def _setup_checkpointer(self) -> None:
+        """Optionally replace MemorySaver with AsyncPostgresSaver.
+
+        Driven by the PERSISTENT_CHECKPOINTER setting. Failure to connect
+        is logged and falls back to MemorySaver so the app still starts.
+        """
+        global checkpointer
+        if not get_setting("PERSISTENT_CHECKPOINTER", False):
+            logger.info("PERSISTENT_CHECKPOINTER=false; using MemorySaver (non-persistent)")
+            self._checkpoint_pool = None
+            return
+        try:
+            from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
+            from psycopg_pool import AsyncConnectionPool
+
+            dsn = os.environ.get("DATABASE_URL")
+            if not dsn:
+                logger.warning("PERSISTENT_CHECKPOINTER=true but DATABASE_URL missing; falling back to MemorySaver")
+                self._checkpoint_pool = None
+                return
+
+            pool = AsyncConnectionPool(
+                conninfo=dsn,
+                max_size=get_setting("CHECKPOINT_POOL_MAX_SIZE", 20),
+                kwargs={"autocommit": True, "prepare_threshold": 0},
+                open=False,
+            )
+            await pool.open()
+            pg_cp = AsyncPostgresSaver(pool)
+            await pg_cp.setup()
+            # Swap global and re-register with orchestrator_helpers.config.
+            checkpointer = pg_cp
+            set_checkpointer(pg_cp)
+            self._checkpoint_pool = pool
+            logger.info("Using AsyncPostgresSaver for persistent checkpointing")
+        except Exception as exc:
+            logger.warning("AsyncPostgresSaver setup failed (%s); falling back to MemorySaver", exc)
+            self._checkpoint_pool = None
 
     # =========================================================================
     # METASPLOIT PREWARM
@@ -451,6 +537,38 @@ class AgentOrchestrator:
         async def _process_tool_confirmation(state, config=None):
             return await process_tool_confirmation_node(state, config)
 
+        # --- Fireteam (multi-agent) ---
+        # Prebuild the member graph once. Reads self.llm at call time via
+        # getter (self.llm is None here; populated by _setup_llm later).
+        self.fireteam_member_graph = build_fireteam_member_graph(
+            llm_getter=lambda: self.llm,
+            tool_executor=self.tool_executor,
+            streaming_callbacks=self._streaming_callbacks,
+            session_manager_base=_SESSION_MANAGER_BASE,
+            neo4j_creds=neo4j_creds,
+            graph_view_cyphers=self._graph_view_cyphers,
+        )
+
+        async def _deploy_fireteam(state, config=None):
+            return await fireteam_deploy_node(
+                state, config,
+                member_graph=self.fireteam_member_graph,
+                streaming_callbacks=self._streaming_callbacks,
+                neo4j_creds=neo4j_creds,
+                graph_view_cyphers=self._graph_view_cyphers,
+            )
+
+        async def _fireteam_collect(state, config=None):
+            return await fireteam_collect_node(
+                state, config,
+                llm=self.llm,
+                neo4j_creds=neo4j_creds,
+                streaming_callbacks=self._streaming_callbacks,
+            )
+
+        async def _process_fireteam_confirmation(state, config=None):
+            return await process_fireteam_confirmation_node(state, config)
+
         builder.add_node("initialize", _initialize)
         builder.add_node("think", _think)
         builder.add_node("execute_tool", _execute_tool)
@@ -462,6 +580,9 @@ class AgentOrchestrator:
         builder.add_node("generate_response", _generate_response)
         builder.add_node("await_tool_confirmation", _await_tool_confirmation)
         builder.add_node("process_tool_confirmation", _process_tool_confirmation)
+        builder.add_node("deploy_fireteam", _deploy_fireteam)
+        builder.add_node("fireteam_collect", _fireteam_collect)
+        builder.add_node("process_fireteam_confirmation", _process_fireteam_confirmation)
 
         # Entry point
         builder.add_edge(START, "initialize")
@@ -474,6 +595,7 @@ class AgentOrchestrator:
                 "process_approval": "process_approval",
                 "process_answer": "process_answer",
                 "process_tool_confirmation": "process_tool_confirmation",
+                "process_fireteam_confirmation": "process_fireteam_confirmation",
                 "think": "think",
                 "generate_response": "generate_response",
             }
@@ -486,6 +608,7 @@ class AgentOrchestrator:
             {
                 "execute_tool": "execute_tool",
                 "execute_plan": "execute_plan",
+                "deploy_fireteam": "deploy_fireteam",
                 "await_approval": "await_approval",
                 "await_question": "await_question",
                 "await_tool_confirmation": "await_tool_confirmation",
@@ -497,6 +620,38 @@ class AgentOrchestrator:
         # Tool execution flow — goes directly back to think (analysis merged into think node)
         builder.add_edge("execute_tool", "think")
         builder.add_edge("execute_plan", "think")
+
+        # Fireteam deploy flow: deploy_fireteam -> fireteam_collect -> (think | await_tool_confirmation)
+        # When collect sets awaiting_tool_confirmation (escalation from a
+        # member), short-circuit to await_tool_confirmation; think would
+        # otherwise burn a wasted LLM call before the router pauses.
+        builder.add_edge("deploy_fireteam", "fireteam_collect")
+        builder.add_conditional_edges(
+            "fireteam_collect",
+            self._route_after_fireteam_collect,
+            {
+                "await_tool_confirmation": "await_tool_confirmation",
+                "think": "think",
+            }
+        )
+
+        # Process fireteam confirmation: after operator approves/rejects an escalation,
+        # redeploy as a single-member fireteam (approve) or go back to think (reject).
+        # Also routes back to await_tool_confirmation when a reject drains the
+        # next queued escalation from the same wave (FIRETEAM.md §20 Q3).
+        # See FIRETEAM.md §7.3.
+        builder.add_conditional_edges(
+            "process_fireteam_confirmation",
+            self._route_after_tool_confirmation,
+            {
+                "deploy_fireteam": "deploy_fireteam",
+                "execute_tool": "execute_tool",
+                "execute_plan": "execute_plan",
+                "await_tool_confirmation": "await_tool_confirmation",
+                "think": "think",
+                "generate_response": "generate_response",
+            }
+        )
 
         # Approval flow - pause for user input
         builder.add_edge("await_approval", END)
@@ -527,13 +682,19 @@ class AgentOrchestrator:
         # Tool confirmation flow - pause for user input
         builder.add_edge("await_tool_confirmation", END)
 
-        # Process tool confirmation routes to execute, think, or ends
+        # Process tool confirmation routes to execute, think, or ends.
+        # `fireteam_deploy` is included because `_route_after_tool_confirmation`
+        # is shared with process_fireteam_confirmation; LangGraph validates
+        # every possible return of the router against each edge map at
+        # compile time. A non-fireteam confirmation never hits that branch.
         builder.add_conditional_edges(
             "process_tool_confirmation",
             self._route_after_tool_confirmation,
             {
+                "deploy_fireteam": "deploy_fireteam",
                 "execute_tool": "execute_tool",
                 "execute_plan": "execute_plan",
+                "await_tool_confirmation": "await_tool_confirmation",
                 "think": "think",
                 "generate_response": "generate_response",
             }
@@ -552,6 +713,10 @@ class AgentOrchestrator:
     def _route_after_initialize(self, state: AgentState) -> str:
         """Route after initialization - process approval, process answer, tool confirmation, guardrail block, or think."""
         if state.get("tool_confirmation_response") and state.get("tool_confirmation_pending"):
+            # Fireteam-escalated confirmation has its own post-approval handler.
+            if state.get("_tool_confirmation_mode") == "fireteam_escalation":
+                logger.info("Routing to process_fireteam_confirmation - fireteam escalation response pending")
+                return "process_fireteam_confirmation"
             logger.info("Routing to process_tool_confirmation - tool confirmation response pending")
             return "process_tool_confirmation"
 
@@ -618,6 +783,15 @@ class AgentOrchestrator:
             else:
                 logger.warning(f"action=plan_tools but no tool_plan in decision, falling back to generate_response")
                 return "generate_response"
+        elif action == "deploy_fireteam":
+            # Gates (FIRETEAM_ENABLED, PERSISTENT_CHECKPOINTER, allowed_phases)
+            # are enforced at think-time; by the time action survives to the
+            # router, it is safe to dispatch. If no plan is present, return
+            # to think (defensive — think normally attaches _current_fireteam_plan).
+            if state.get("_current_fireteam_plan"):
+                return "deploy_fireteam"
+            logger.warning("deploy_fireteam but no _current_fireteam_plan in state; falling back to think")
+            return "think"
         elif action == "use_tool" and tool_name:
             return "execute_tool"
         else:
@@ -638,11 +812,46 @@ class AgentOrchestrator:
             return "generate_response"
         return "think"
 
+    def _route_after_fireteam_collect(self, state: AgentState) -> str:
+        """Route after fireteam_collect merges member results.
+
+        If a member escalated a dangerous tool request, collect set
+        awaiting_tool_confirmation=True; pause the parent immediately
+        instead of running think (which would burn an LLM call).
+        """
+        if state.get("awaiting_tool_confirmation"):
+            return "await_tool_confirmation"
+        return "think"
+
     def _route_after_tool_confirmation(self, state: AgentState) -> str:
         """Route after processing tool confirmation response."""
         if state.get("task_complete"):
             return "generate_response"
+        # Queued next escalation from the same wave: re-pause for operator.
+        # process_fireteam_confirmation_node sets this when rejecting but more
+        # escalations remain in _pending_escalations (FIRETEAM.md §20 Q3).
+        if (
+            state.get("_tool_confirmation_mode") == "fireteam_escalation"
+            and state.get("awaiting_tool_confirmation")
+            and state.get("tool_confirmation_pending")
+        ):
+            return "await_tool_confirmation"
         if state.get("_reject_tool"):
+            return "think"
+        # Fireteam escalation approved: redeploy as a single-member fireteam
+        # (per FIRETEAM.md §7.3). Do NOT fall through to execute_plan — that
+        # would hijack the parent with the approved tools and detach them
+        # from the originating fireteam wave in the UI.
+        if state.get("_tool_confirmation_mode") == "fireteam_redeploy":
+            return "deploy_fireteam"
+        # Rejection from process_fireteam_confirmation (no _reject_tool set
+        # but also no plan to redeploy): go back to think.
+        if (
+            state.get("_current_fireteam_plan") is None
+            and state.get("_tool_confirmation_mode") is None
+            and not state.get("_current_step")
+            and not state.get("_current_plan")
+        ):
             return "think"
         if state.get("_tool_confirmation_mode") == "plan":
             return "execute_plan"

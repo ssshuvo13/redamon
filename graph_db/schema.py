@@ -151,6 +151,11 @@ ADDITIONAL_INDEXES = [
     "CREATE INDEX idx_chainfinding_severity IF NOT EXISTS FOR (f:ChainFinding) ON (f.severity)",
     "CREATE INDEX idx_chainfailure_type IF NOT EXISTS FOR (fl:ChainFailure) ON (fl.failure_type)",
     "CREATE INDEX idx_attackchain_status IF NOT EXISTS FOR (ac:AttackChain) ON (ac.status)",
+    # Fireteam (multi-agent) attribution indexes. Report queries filter
+    # ChainStep/ChainFinding by fireteam_id to assemble per-member sections;
+    # without the index those queries scan the full Chain subgraph.
+    "CREATE INDEX idx_chainstep_by_fireteam IF NOT EXISTS FOR (s:ChainStep) ON (s.fireteam_id)",
+    "CREATE INDEX idx_chainfinding_by_fireteam IF NOT EXISTS FOR (f:ChainFinding) ON (f.fireteam_id)",
 ]
 
 

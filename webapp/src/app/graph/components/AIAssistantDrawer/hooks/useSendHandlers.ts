@@ -1,6 +1,7 @@
 import { useCallback, useRef, KeyboardEvent } from 'react'
 import type { ApprovalRequestPayload, QuestionRequestPayload, ToolConfirmationRequestPayload } from '@/lib/websocket-types'
-import type { ChatItem, Message } from '../types'
+import type { ChatItem, Message, FireteamItem, FireteamMemberPanel } from '../types'
+import type { PlanWaveItem } from '../AgentTimeline'
 
 interface ChatSkillSummary {
   id: string
@@ -66,6 +67,7 @@ interface SendHandlersDeps {
   sendSkillInject: (payload: { skill_id: string; skill_name: string; content: string }) => void
   sendApproval: (decision: 'approve' | 'modify' | 'abort', modification?: string) => void
   sendToolConfirmation: (decision: 'approve' | 'modify' | 'reject', modifications?: Record<string, any>) => void
+  sendFireteamMemberConfirmation: (wave_id: string, member_id: string, decision: 'approve' | 'reject', modifications?: Record<string, any>) => void
   sendAnswer: (answer: string) => void
   sendStop: () => void
   sendResume: () => void
@@ -94,7 +96,7 @@ export function useSendHandlers(deps: SendHandlersDeps) {
     isProcessingQuestion, awaitingQuestionRef,
     isProcessingToolConfirmation, awaitingToolConfirmationRef,
     pendingApprovalToolId, pendingApprovalWaveId,
-    sendQuery, sendGuidance, sendSkillInject, sendApproval, sendToolConfirmation, sendAnswer, sendStop, sendResume,
+    sendQuery, sendGuidance, sendSkillInject, sendApproval, sendToolConfirmation, sendFireteamMemberConfirmation, sendAnswer, sendStop, sendResume,
     conversationId, setConversationId, projectId, userId, sessionId,
     createConversation, saveMessage, updateConvMeta,
   } = deps
@@ -310,6 +312,7 @@ export function useSendHandlers(deps: SendHandlersDeps) {
     if (question.startsWith('/skill')) {
       const args = question.slice('/skill'.length).trim()
       setInputValue('')
+      resetInputHeight()
       await handleSkillCommand(args)
       return
     }
@@ -341,6 +344,7 @@ export function useSendHandlers(deps: SendHandlersDeps) {
       }
       setChatItems((prev: ChatItem[]) => [...prev, guidanceMessage])
       setInputValue('')
+      resetInputHeight()
       sendGuidance(question)
       saveMessage('guidance', { content: question, isGuidance: true })
     } else {
@@ -359,6 +363,7 @@ export function useSendHandlers(deps: SendHandlersDeps) {
       }
       setChatItems(prev => [...prev, userMessage])
       setInputValue('')
+      resetInputHeight()
       setIsLoading(true)
 
       const hasUserMessage = chatItems.some((item: ChatItem) => 'role' in item && item.role === 'user')
@@ -417,11 +422,98 @@ export function useSendHandlers(deps: SendHandlersDeps) {
     if (isProcessingToolConfirmation.current) return
     isProcessingToolConfirmation.current = true
 
-    setAwaitingToolConfirmation(false)
-    awaitingToolConfirmationRef.current = false
-    setToolConfirmationRequest(null)
-    setIsLoading(true)
+    // Locate the pending card. Fireteam member escalations live inside
+    // FireteamItem.members[*].planWaves; regular pending cards live at the
+    // top of chatItems.
+    let fireteamHit: {
+      fireteamId: string
+      memberId: string
+      fireteamIdx: number
+      memberIdx: number
+      waveIdx: number
+    } | null = null
 
+    for (let i = 0; i < chatItems.length && !fireteamHit; i++) {
+      const it = chatItems[i]
+      if (!('type' in it)) continue
+      if (it.type !== 'fireteam') continue
+      const ft = it as FireteamItem
+      for (let m = 0; m < ft.members.length; m++) {
+        const member = ft.members[m]
+        const w = member.planWaves.findIndex(pw => pw.id === itemId)
+        if (w >= 0) {
+          fireteamHit = {
+            fireteamId: ft.fireteam_id,
+            memberId: member.member_id,
+            fireteamIdx: i,
+            memberIdx: m,
+            waveIdx: w,
+          }
+          break
+        }
+      }
+    }
+
+    // Only flip parent awaiting/loading state for top-level confirmations.
+    // Fireteam escalations never paused the parent, so don't touch isLoading
+    // — other members are still running in parallel.
+    if (!fireteamHit) {
+      setAwaitingToolConfirmation(false)
+      awaitingToolConfirmationRef.current = false
+      setToolConfirmationRequest(null)
+      setIsLoading(true)
+    }
+
+    if (fireteamHit) {
+      // Nested fireteam escalation path.
+      setChatItems((prev: ChatItem[]) => {
+        const next = prev.slice()
+        const ft = next[fireteamHit!.fireteamIdx] as FireteamItem
+        const member = ft.members[fireteamHit!.memberIdx]
+        let updatedPlanWaves: PlanWaveItem[]
+        if (decision === 'reject') {
+          // Mark the wave as error so the operator sees the rejection record
+          // in the member's history.
+          const updatedWave: PlanWaveItem = {
+            ...member.planWaves[fireteamHit!.waveIdx],
+            status: 'error',
+            interpretation: 'Rejected by user',
+          }
+          updatedPlanWaves = [
+            ...member.planWaves.slice(0, fireteamHit!.waveIdx),
+            updatedWave,
+            ...member.planWaves.slice(fireteamHit!.waveIdx + 1),
+          ]
+        } else {
+          // Drop the pending card; the member resumes and will emit real
+          // tool events into its panel.
+          updatedPlanWaves = [
+            ...member.planWaves.slice(0, fireteamHit!.waveIdx),
+            ...member.planWaves.slice(fireteamHit!.waveIdx + 1),
+          ]
+        }
+        const updatedMember: FireteamMemberPanel = { ...member, planWaves: updatedPlanWaves }
+        next[fireteamHit!.fireteamIdx] = {
+          ...ft,
+          members: [
+            ...ft.members.slice(0, fireteamHit!.memberIdx),
+            updatedMember,
+            ...ft.members.slice(fireteamHit!.memberIdx + 1),
+          ],
+        }
+        return next
+      })
+      try {
+        sendFireteamMemberConfirmation(fireteamHit.fireteamId, fireteamHit.memberId, decision)
+      } catch {
+        /* swallow; the registry entry will time out server-side */
+      } finally {
+        setTimeout(() => { isProcessingToolConfirmation.current = false }, 500)
+      }
+      return
+    }
+
+    // Top-level (non-fireteam) confirmation path — unchanged.
     if (decision === 'reject') {
       setChatItems((prev: ChatItem[]) => prev.map((item: ChatItem) => {
         if (!('type' in item)) return item
@@ -437,8 +529,9 @@ export function useSendHandlers(deps: SendHandlersDeps) {
       pendingApprovalWaveId.current = null
     } else {
       setChatItems((prev: ChatItem[]) => {
-        const matchingItem = prev.find((item: ChatItem) =>
-          'type' in item && item.id === itemId && (item.type === 'plan_wave' || item.type === 'tool_execution')
+        const matchingItem = prev.find(
+          (item: ChatItem) => 'type' in item && item.id === itemId
+            && (item.type === 'plan_wave' || item.type === 'tool_execution'),
         )
         if (matchingItem && 'type' in matchingItem) {
           if (matchingItem.type === 'plan_wave') {
@@ -460,7 +553,7 @@ export function useSendHandlers(deps: SendHandlersDeps) {
     } finally {
       setTimeout(() => { isProcessingToolConfirmation.current = false }, 1000)
     }
-  }, [sendToolConfirmation,
+  }, [chatItems, sendToolConfirmation, sendFireteamMemberConfirmation,
       setAwaitingToolConfirmation, setToolConfirmationRequest, setIsLoading, setChatItems])
 
   const handleAnswer = useCallback(() => {
@@ -520,11 +613,23 @@ export function useSendHandlers(deps: SendHandlersDeps) {
     }
   }
 
+  // True once the user has manually dragged the textarea resize handle.
+  // While true, keystroke-driven auto-grow is suppressed so the user's chosen
+  // height is preserved. Cleared on send (resetInputHeight).
+  const userResizedRef = useRef(false)
+
   const handleInputChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     setInputValue(e.target.value)
-    e.target.style.height = 'auto'
-    e.target.style.height = `${Math.min(e.target.scrollHeight, 120)}px`
+    if (!userResizedRef.current) {
+      e.target.style.height = 'auto'
+      e.target.style.height = `${Math.min(e.target.scrollHeight, 120)}px`
+    }
   }
+
+  const resetInputHeight = useCallback(() => {
+    if (inputRef.current) inputRef.current.style.height = ''
+    userResizedRef.current = false
+  }, [])
 
   return {
     inputRef,
@@ -537,5 +642,7 @@ export function useSendHandlers(deps: SendHandlersDeps) {
     handleKeyDown,
     handleInputChange,
     activateSkill,
+    userResizedRef,
+    resetInputHeight,
   }
 }

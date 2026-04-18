@@ -26,8 +26,15 @@ async def save_chat_message(
     data: dict,
     project_id: Optional[str] = None,
     user_id: Optional[str] = None,
+    *,
+    agent_id_key: Optional[str] = None,
+    fireteam_id_key: Optional[str] = None,
 ):
-    """Save a single chat message to the conversation via session ID."""
+    """Save a single chat message to the conversation via session ID.
+
+    agent_id_key and fireteam_id_key attribute the event to a Fireteam member.
+    When both are None (root agent), the row is root-attributed.
+    """
     try:
         async with httpx.AsyncClient(timeout=5.0) as client:
             body: dict = {"type": msg_type, "data": data}
@@ -35,6 +42,10 @@ async def save_chat_message(
                 body["projectId"] = project_id
             if user_id:
                 body["userId"] = user_id
+            if agent_id_key:
+                body["memberIdKey"] = agent_id_key
+            if fireteam_id_key:
+                body["fireteamIdKey"] = fireteam_id_key
             resp = await client.post(
                 f"{WEBAPP_API_URL}/api/conversations/by-session/{session_id}/messages",
                 json=body,

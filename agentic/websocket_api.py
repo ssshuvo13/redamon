@@ -43,6 +43,7 @@ class MessageType(str, Enum):
     APPROVAL = "approval"
     ANSWER = "answer"
     TOOL_CONFIRMATION = "tool_confirmation"
+    FIRETEAM_MEMBER_CONFIRMATION = "fireteam_member_confirmation"
     PING = "ping"
     GUIDANCE = "guidance"
     SKILL_INJECT = "skill_inject"
@@ -74,6 +75,18 @@ class MessageType(str, Enum):
     PLAN_ANALYSIS = "plan_analysis"
     DEEP_THINK = "deep_think"
     TOOL_CONFIRMATION_REQUEST = "tool_confirmation_request"
+    # Fireteam (multi-agent) events
+    FIRETEAM_DEPLOYED = "fireteam_deployed"
+    FIRETEAM_MEMBER_STARTED = "fireteam_member_started"
+    FIRETEAM_THINKING = "fireteam_thinking"
+    FIRETEAM_TOOL_START = "fireteam_tool_start"
+    FIRETEAM_TOOL_OUTPUT_CHUNK = "fireteam_tool_output_chunk"
+    FIRETEAM_TOOL_COMPLETE = "fireteam_tool_complete"
+    FIRETEAM_PLAN_START = "fireteam_plan_start"
+    FIRETEAM_PLAN_COMPLETE = "fireteam_plan_complete"
+    FIRETEAM_MEMBER_COMPLETED = "fireteam_member_completed"
+    FIRETEAM_COMPLETED = "fireteam_completed"
+    FIRETEAM_MEMBER_AWAITING_CONFIRMATION = "fireteam_member_awaiting_confirmation"
 
 
 # =============================================================================
@@ -108,6 +121,19 @@ class ToolConfirmationMessage(BaseModel):
     """Respond to tool confirmation request"""
     decision: str  # 'approve' | 'modify' | 'reject'
     modifications: Optional[dict] = None  # {tool_name: {arg: value}} for modify
+
+
+class FireteamMemberConfirmationMessage(BaseModel):
+    """Operator decision for a single fireteam member's dangerous-tool request.
+
+    Routed to fireteam_confirmation_registry.resolve() which wakes the
+    awaiting member task. Unlike ToolConfirmationMessage, this does NOT
+    pause the parent graph — multiple members may be awaiting in parallel.
+    """
+    wave_id: str
+    member_id: str
+    decision: str  # 'approve' | 'reject'
+    modifications: Optional[dict] = None
 
 
 class GuidanceMessage(BaseModel):
@@ -340,7 +366,14 @@ class StreamingCallback:
     async def _persist_worker(self):
         """Process persist messages sequentially to guarantee ordering."""
         while True:
-            msg_type, data = await self._persist_queue.get()
+            item = await self._persist_queue.get()
+            # Support both legacy 2-tuple and extended 4-tuple entries.
+            if len(item) == 2:
+                msg_type, data = item
+                agent_id_key = None
+                fireteam_id_key = None
+            else:
+                msg_type, data, agent_id_key, fireteam_id_key = item
             try:
                 await save_chat_message(
                     session_id=self._session_id,
@@ -348,6 +381,8 @@ class StreamingCallback:
                     data=data,
                     project_id=self._project_id,
                     user_id=self._user_id,
+                    agent_id_key=agent_id_key,
+                    fireteam_id_key=fireteam_id_key,
                 )
             except Exception as e:
                 logger.warning(f"Persist worker error: {e}")
@@ -370,18 +405,35 @@ class StreamingCallback:
                 return conn
         return self._original_connection
 
-    def _persist(self, msg_type: str, data: dict):
-        """Enqueue message for ordered persistence to DB."""
-        self._ensure_persist_worker()
-        self._persist_queue.put_nowait((msg_type, data))
+    def _persist(self, msg_type: str, data: dict,
+                 *, member_id_key: Optional[str] = None,
+                 fireteam_id_key: Optional[str] = None):
+        """Enqueue message for ordered persistence to DB.
 
-    async def on_thinking(self, iteration: int, phase: str, thought: str, reasoning: str):
-        """Called when agent starts thinking"""
+        member_id_key and fireteam_id_key attribute the row to a fireteam
+        member. Root agent messages leave both None.
+        """
+        self._ensure_persist_worker()
+        if member_id_key or fireteam_id_key:
+            self._persist_queue.put_nowait((msg_type, data, member_id_key, fireteam_id_key))
+        else:
+            self._persist_queue.put_nowait((msg_type, data))
+
+    async def on_thinking(self, iteration: int, phase: str, thought: str, reasoning: str,
+                          action: Optional[str] = None):
+        """Called when agent starts thinking.
+
+        `action` is the decision's action (e.g. "use_tool", "deploy_fireteam").
+        It's persisted so session restore can suppress redundant thinking
+        cards — notably `deploy_fireteam` thinks whose rationale already
+        lives on the FireteamCard.
+        """
         payload = {
             "iteration": iteration,
             "phase": phase,
             "thought": thought,
-            "reasoning": reasoning
+            "reasoning": reasoning,
+            "action": action,
         }
         await self.connection.send_message(MessageType.THINKING, payload)
         self._persist("thinking", payload)
@@ -436,6 +488,7 @@ class StreamingCallback:
         recommended_next_steps: list = None,
         wave_id: str = None,
         step_index: int = None,
+        duration_ms: Optional[int] = None,
     ):
         """Called when tool execution completes"""
         payload = {
@@ -449,6 +502,8 @@ class StreamingCallback:
             payload["wave_id"] = wave_id
         if step_index is not None:
             payload["step_index"] = step_index
+        if duration_ms is not None:
+            payload["duration_ms"] = duration_ms
         await self.connection.send_message(MessageType.TOOL_COMPLETE, payload)
         # Include accumulated raw output and tool_args in persisted payload
         ctx_key = f"{wave_id}:{step_index}:{tool_name}" if wave_id and step_index is not None else (f"{wave_id}:{tool_name}" if wave_id else tool_name)
@@ -481,6 +536,184 @@ class StreamingCallback:
         }
         await self.connection.send_message(MessageType.PLAN_COMPLETE, payload)
         self._persist("plan_complete", payload)
+
+    # ---------- Fireteam events ----------
+
+    async def on_fireteam_deployed(self, fireteam_id: str, iteration: int,
+                                   plan_rationale: str, members: list):
+        payload = {
+            "fireteam_id": fireteam_id,
+            "iteration": iteration,
+            "plan_rationale": plan_rationale,
+            "member_count": len(members),
+            "members": members,
+        }
+        await self.connection.send_message(MessageType.FIRETEAM_DEPLOYED, payload)
+        self._persist("fireteam_deployed", payload, fireteam_id_key=fireteam_id)
+
+    async def on_fireteam_member_started(self, fireteam_id: str, member_id: str, name: str):
+        payload = {"fireteam_id": fireteam_id, "member_id": member_id, "name": name}
+        await self.connection.send_message(MessageType.FIRETEAM_MEMBER_STARTED, payload)
+        self._persist("fireteam_member_started", payload,
+                      fireteam_id_key=fireteam_id, member_id_key=member_id)
+
+    async def on_fireteam_thinking(self, fireteam_id: str, member_id: str, name: str,
+                                   iteration: int, phase: str, thought: str, reasoning: str):
+        payload = {
+            "fireteam_id": fireteam_id,
+            "member_id": member_id,
+            "name": name,
+            "iteration": iteration,
+            "phase": phase,
+            "thought": thought,
+            "reasoning": reasoning,
+        }
+        await self.connection.send_message(MessageType.FIRETEAM_THINKING, payload)
+        self._persist("fireteam_thinking", payload,
+                      fireteam_id_key=fireteam_id, member_id_key=member_id)
+
+    async def on_fireteam_tool_start(self, fireteam_id: str, member_id: str,
+                                     tool_name: str, tool_args: dict,
+                                     wave_id: Optional[str] = None, step_index: Optional[int] = None):
+        payload = {
+            "fireteam_id": fireteam_id,
+            "member_id": member_id,
+            "tool_name": tool_name,
+            "tool_args": tool_args,
+            "wave_id": wave_id,
+            "step_index": step_index,
+        }
+        await self.connection.send_message(MessageType.FIRETEAM_TOOL_START, payload)
+        self._persist("fireteam_tool_start", payload,
+                      fireteam_id_key=fireteam_id, member_id_key=member_id)
+
+    async def on_fireteam_tool_output_chunk(self, fireteam_id: str, member_id: str,
+                                            tool_name: str, chunk: str,
+                                            is_final: bool = False,
+                                            wave_id: Optional[str] = None,
+                                            step_index: Optional[int] = None):
+        payload = {
+            "fireteam_id": fireteam_id,
+            "member_id": member_id,
+            "tool_name": tool_name,
+            "chunk": chunk,
+            "is_final": is_final,
+            "wave_id": wave_id,
+            "step_index": step_index,
+        }
+        await self.connection.send_message(MessageType.FIRETEAM_TOOL_OUTPUT_CHUNK, payload)
+        self._persist("fireteam_tool_output_chunk", payload,
+                      fireteam_id_key=fireteam_id, member_id_key=member_id)
+
+    async def on_fireteam_tool_complete(self, fireteam_id: str, member_id: str,
+                                        tool_name: str, success: bool, duration_ms: int,
+                                        output_excerpt: str = "",
+                                        wave_id: Optional[str] = None,
+                                        step_index: Optional[int] = None):
+        # wave_id/step_index let the frontend disambiguate which container
+        # (standalone member.tools[] vs nested plan wave) this complete event
+        # belongs to. Without them, two tools with the same name (e.g. an
+        # iter-1 standalone playwright and an iter-2 plan-wave playwright)
+        # collide in the reducer's findLast(name+running) match.
+        payload = {
+            "fireteam_id": fireteam_id,
+            "member_id": member_id,
+            "tool_name": tool_name,
+            "success": success,
+            "duration_ms": duration_ms,
+            "output_excerpt": output_excerpt[:500],
+            "wave_id": wave_id,
+            "step_index": step_index,
+        }
+        await self.connection.send_message(MessageType.FIRETEAM_TOOL_COMPLETE, payload)
+        self._persist("fireteam_tool_complete", payload,
+                      fireteam_id_key=fireteam_id, member_id_key=member_id)
+
+    async def on_fireteam_plan_start(self, fireteam_id: str, member_id: str,
+                                     wave_id: str, plan_rationale: str, tools: list):
+        payload = {
+            "fireteam_id": fireteam_id,
+            "member_id": member_id,
+            "wave_id": wave_id,
+            "plan_rationale": plan_rationale,
+            "tools": tools,
+        }
+        await self.connection.send_message(MessageType.FIRETEAM_PLAN_START, payload)
+        self._persist("fireteam_plan_start", payload,
+                      fireteam_id_key=fireteam_id, member_id_key=member_id)
+
+    async def on_fireteam_plan_complete(self, fireteam_id: str, member_id: str,
+                                        wave_id: str, total: int, successful: int, failed: int):
+        payload = {
+            "fireteam_id": fireteam_id,
+            "member_id": member_id,
+            "wave_id": wave_id,
+            "total_steps": total,
+            "successful": successful,
+            "failed": failed,
+        }
+        await self.connection.send_message(MessageType.FIRETEAM_PLAN_COMPLETE, payload)
+        self._persist("fireteam_plan_complete", payload,
+                      fireteam_id_key=fireteam_id, member_id_key=member_id)
+
+    async def on_fireteam_member_completed(self, fireteam_id: str, member_id: str, name: str,
+                                           status: str, iterations_used: int, tokens_used: int,
+                                           findings_count: int, wall_clock_seconds: float,
+                                           error_message: Optional[str] = None):
+        payload = {
+            "fireteam_id": fireteam_id,
+            "member_id": member_id,
+            "name": name,
+            "status": status,
+            "iterations_used": iterations_used,
+            "tokens_used": tokens_used,
+            "findings_count": findings_count,
+            "wall_clock_seconds": wall_clock_seconds,
+            "error_message": error_message,
+        }
+        await self.connection.send_message(MessageType.FIRETEAM_MEMBER_COMPLETED, payload)
+        self._persist("fireteam_member_completed", payload,
+                      fireteam_id_key=fireteam_id, member_id_key=member_id)
+
+    async def on_fireteam_completed(self, fireteam_id: str, total: int,
+                                    status_counts: dict, wall_clock_seconds: float):
+        payload = {
+            "fireteam_id": fireteam_id,
+            "total": total,
+            "status_counts": status_counts,
+            "wall_clock_seconds": wall_clock_seconds,
+        }
+        await self.connection.send_message(MessageType.FIRETEAM_COMPLETED, payload)
+        self._persist("fireteam_completed", payload, fireteam_id_key=fireteam_id)
+
+    async def on_fireteam_member_awaiting_confirmation(self, info: dict):
+        """A single fireteam member is paused awaiting operator approval.
+
+        ``info`` = {wave_id, member_id, member_name, confirmation_id, mode,
+                    tools: [{tool_name, tool_args}], reasoning, iteration}.
+        Other members in the same wave continue running; operator resolves
+        each independently via MessageType.FIRETEAM_MEMBER_CONFIRMATION.
+        """
+        wave_id = info.get("wave_id") or ""
+        member_id = info.get("member_id") or ""
+        payload = {
+            "fireteam_id": wave_id,
+            "wave_id": wave_id,
+            "member_id": member_id,
+            "member_name": info.get("member_name"),
+            "confirmation_id": info.get("confirmation_id"),
+            "mode": info.get("mode") or "single",
+            "tools": info.get("tools") or [],
+            "reasoning": info.get("reasoning") or "",
+            "iteration": info.get("iteration"),
+        }
+        await self.connection.send_message(
+            MessageType.FIRETEAM_MEMBER_AWAITING_CONFIRMATION, payload,
+        )
+        self._persist(
+            "fireteam_member_awaiting_confirmation", payload,
+            fireteam_id_key=wave_id, member_id_key=member_id,
+        )
 
     async def on_plan_analysis(self, wave_id: str, interpretation: str,
                                actionable_findings: list, recommended_next_steps: list):
@@ -625,11 +858,22 @@ class WebSocketHandler:
             # Store graph view scope (if provided)
             connection.graph_view_cypher = init_msg.graph_view_cypher
 
-            # Send connected confirmation
+            # Send connected confirmation with protocol version + feature
+            # advertising. Protocol v2 adds the FIRETEAM_* event family;
+            # older clients ignore unknown fields so this is backwards-compat.
+            _features = ["plan_tools", "tool_confirmation"]
+            try:
+                from project_settings import get_setting
+                if get_setting("FIRETEAM_ENABLED", False):
+                    _features.append("fireteam")
+            except Exception:
+                pass
             await connection.send_message(MessageType.CONNECTED, {
                 "session_id": init_msg.session_id,
                 "message": "WebSocket connection established",
-                "timestamp": datetime.utcnow().isoformat()
+                "timestamp": datetime.utcnow().isoformat(),
+                "protocol_version": 2,
+                "features": _features,
             })
 
             logger.info(f"Session initialized: {init_msg.session_id}")
@@ -846,6 +1090,58 @@ class WebSocketHandler:
             connection._active_task = None
             self.ws_manager.clear_task(connection.get_key())
             asyncio.create_task(update_conversation(connection.session_id, {"agentRunning": False}))
+
+    async def handle_fireteam_member_confirmation(self, connection: WebSocketConnection, payload: dict):
+        """Operator decision for a per-member dangerous-tool escalation.
+
+        Does NOT pause/resume the graph — parent+other members keep running.
+        The decision is stored in the process-local confirmation registry,
+        which wakes the single awaiting member task.
+        """
+        try:
+            msg = FireteamMemberConfirmationMessage(**payload)
+        except ValidationError as e:
+            logger.error(f"Invalid fireteam_member_confirmation payload: {e}")
+            await connection.send_message(MessageType.ERROR, {
+                "message": "Invalid fireteam member confirmation payload",
+                "recoverable": True,
+            })
+            return
+
+        if not connection.authenticated:
+            await connection.send_message(MessageType.ERROR, {
+                "message": "Not authenticated",
+                "recoverable": False,
+            })
+            return
+
+        from orchestrator_helpers.fireteam_confirmation_registry import resolve as _resolve
+        ok = _resolve(
+            session_id=connection.session_id,
+            wave_id=msg.wave_id,
+            member_id=msg.member_id,
+            decision=msg.decision,
+            modifications=msg.modifications,
+        )
+        logger.info(
+            "fireteam_member_confirmation session=%s wave=%s member=%s decision=%s resolved=%s",
+            connection.session_id, msg.wave_id, msg.member_id, msg.decision, ok,
+        )
+        # Persist so session replay can see the operator's decision.
+        try:
+            StreamingCallback(connection, self.ws_manager)._persist(
+                "fireteam_member_confirmation_response",
+                {
+                    "wave_id": msg.wave_id,
+                    "member_id": msg.member_id,
+                    "decision": msg.decision,
+                    "resolved": ok,
+                },
+                fireteam_id_key=msg.wave_id,
+                member_id_key=msg.member_id,
+            )
+        except Exception:
+            logger.exception("fireteam_member_confirmation: persist failed")
 
     async def handle_tool_confirmation(self, connection: WebSocketConnection, payload: dict):
         """Handle tool confirmation response — launches as background task"""
@@ -1116,6 +1412,8 @@ class WebSocketHandler:
                 await self.handle_answer(connection, payload)
             elif msg_type == MessageType.TOOL_CONFIRMATION:
                 await self.handle_tool_confirmation(connection, payload)
+            elif msg_type == MessageType.FIRETEAM_MEMBER_CONFIRMATION:
+                await self.handle_fireteam_member_confirmation(connection, payload)
             elif msg_type == MessageType.PING:
                 await self.handle_ping(connection, payload)
             elif msg_type == MessageType.GUIDANCE:

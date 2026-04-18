@@ -1,7 +1,25 @@
-import type { ThinkingItem, ToolExecutionItem, PlanWaveItem, DeepThinkItem, TimelineItem } from './AgentTimeline'
+import type {
+  ThinkingItem,
+  ToolExecutionItem,
+  PlanWaveItem,
+  DeepThinkItem,
+  TimelineItem,
+  FireteamItem,
+  FireteamMemberPanel,
+  FireteamMemberStatus,
+} from './AgentTimeline'
 
 // Re-export AgentTimeline types so consumers only need one import path
-export type { ThinkingItem, ToolExecutionItem, PlanWaveItem, DeepThinkItem, TimelineItem }
+export type {
+  ThinkingItem,
+  ToolExecutionItem,
+  PlanWaveItem,
+  DeepThinkItem,
+  TimelineItem,
+  FireteamItem,
+  FireteamMemberPanel,
+  FireteamMemberStatus,
+}
 
 export type Phase = 'informational' | 'exploitation' | 'post_exploitation'
 
@@ -30,7 +48,14 @@ export interface FileDownloadItem {
   source: string
 }
 
-export type ChatItem = Message | ThinkingItem | ToolExecutionItem | PlanWaveItem | FileDownloadItem | DeepThinkItem
+export type ChatItem =
+  | Message
+  | ThinkingItem
+  | ToolExecutionItem
+  | PlanWaveItem
+  | FileDownloadItem
+  | DeepThinkItem
+  | FireteamItem
 
 export interface AIAssistantDrawerProps {
   isOpen: boolean

@@ -8,7 +8,7 @@ import { GraphNavControls } from './GraphNavControls'
 import { GraphEmptyState } from './GraphEmptyState'
 import styles from './GraphCanvas.module.css'
 
-export const AUTO_2D_THRESHOLD = 1000
+export const AUTO_2D_THRESHOLD = 1500
 
 interface GraphCanvasProps {
   data: GraphData | undefined

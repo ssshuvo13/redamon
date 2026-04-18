@@ -207,7 +207,10 @@ class ObjectiveOutcome(BaseModel):
 # LLM RESPONSE MODELS (for structured parsing)
 # =============================================================================
 
-ActionType = Literal["use_tool", "plan_tools", "transition_phase", "complete", "ask_user"]
+ActionType = Literal[
+    "use_tool", "plan_tools", "transition_phase", "complete", "ask_user",
+    "deploy_fireteam",
+]
 
 
 class PhaseTransitionDecision(BaseModel):
@@ -309,6 +312,126 @@ class ToolPlan(BaseModel):
     plan_rationale: str = ""
 
 
+# =============================================================================
+# FIRETEAM MODELS (multi-agent deployment)
+# =============================================================================
+
+FireteamMemberStatus = Literal[
+    "running", "success", "partial", "timeout",
+    "needs_confirmation", "cancelled", "error",
+]
+
+
+class FireteamMemberSpec(BaseModel):
+    """One member in a fireteam deployment plan (emitted by the LLM).
+
+    Note: `max_iterations` is intentionally NOT a field here. ReAct loops
+    run until the agent decides `complete` — the operator-facing safety cap
+    is set globally via project setting FIRETEAM_MEMBER_MAX_ITERATIONS and
+    applied in _build_member_state. Letting the root LLM pre-specify a
+    per-member iteration budget in advance is both wasteful (extra tokens
+    in the fireteam_plan JSON) and meaningless (the model has no way to
+    predict iteration count before the member encounters the target).
+    """
+    name: str = Field(description="Short human-readable name, shown in UI")
+    task: str = Field(description="Task description the member receives as its objective")
+    skills: List[str] = Field(
+        default_factory=list,
+        description="Skill slugs filtered into member's allowed tool set",
+    )
+
+
+class FireteamPlan(BaseModel):
+    """A deployment of independent fireteam members to run concurrently."""
+    members: List[FireteamMemberSpec] = Field(min_length=1, max_length=8)
+    plan_rationale: str
+    fireteam_id: Optional[str] = None  # Filled by fireteam_deploy_node
+
+
+class FireteamMemberResult(BaseModel):
+    """Shape returned by each member when its ReAct loop completes."""
+    member_id: str
+    name: str
+    status: FireteamMemberStatus
+    completion_reason: str = ""
+    iterations_used: int = 0
+    tokens_used: int = 0
+    wall_clock_seconds: float = 0.0
+    findings: List[ChainFindingExtract] = Field(default_factory=list)
+    target_info_delta: dict = Field(default_factory=dict)
+    execution_trace_summary: List[dict] = Field(default_factory=list)
+    # ID of the member's last-written ChainStep. Findings extracted from this
+    # member's run are anchored to this step when persisted to Neo4j — without
+    # it they would orphan (no PRODUCED edge). Propagated from the member's
+    # FireteamMemberState._last_chain_step_id by _result_from_final_state.
+    last_chain_step_id: Optional[str] = None
+    # When status == "needs_confirmation"
+    pending_confirmation: Optional[dict] = None
+    # When status == "error"
+    error_message: Optional[str] = None
+
+
+class FireteamMemberState(TypedDict):
+    """Stripped state for the fireteam member graph. NOT a superset of AgentState."""
+    messages: Annotated[list, add_messages]
+    current_iteration: int
+    max_iterations: int
+    task_complete: bool
+    completion_reason: Optional[str]
+
+    # Read-only inherited from parent
+    current_phase: Phase
+    attack_path_type: str
+    user_id: str
+    project_id: str
+    session_id: str
+    parent_target_info: dict     # snapshot of parent target_info at deploy time
+    member_name: str             # for streaming attribution
+    member_id: str               # UUID for chain graph and logging
+    fireteam_id: str             # fireteam this member belongs to
+    skills: List[str]            # tool filter
+    task: str                    # member's local objective
+
+    # Member-local
+    execution_trace: List[dict]
+    target_info: dict
+    chain_findings_memory: List[dict]
+    chain_failures_memory: List[dict]
+
+    # Tool confirmation escalation (member does not block; parent handles)
+    _pending_confirmation: Optional[dict]
+
+    # Parallel tool wave support (reuses execute_plan pattern)
+    _current_plan: Optional[dict]
+
+    # Current ExecutionStep (set by member think, read + updated by
+    # execute_tool_node, then analyzed on the next think iteration).
+    _current_step: Optional[dict]
+
+    # PREVIOUS step snapshot (populated by member think AFTER it analyzes
+    # the prev tool's output). emit_streaming_events watches this key to
+    # fire fireteam_tool_complete. Without this field being declared on
+    # the TypedDict, LangGraph filters the update out on merge and the
+    # UI never sees the tool transition from `running` → `success`.
+    _completed_step: Optional[dict]
+
+    # Parsed LLMDecision for the current turn.
+    _decision: Optional[dict]
+
+    # Raw tool result from execute_tool_node (success, output, error).
+    _tool_result: Optional[dict]
+
+    # Last-written ChainStep id so follow-on steps can link via prev_step_id.
+    _last_chain_step_id: Optional[str]
+
+    # Always False in members (parent does guardrail check); kept for shape parity.
+    _guardrail_blocked: bool
+
+    # Passive observability — tokens_used accumulates per turn for metrics
+    # and report display. No enforcement: iteration budget (max_iterations)
+    # is the sole cap on member runtime.
+    tokens_used: int
+
 
 class LLMDecision(BaseModel):
     """
@@ -342,6 +465,12 @@ class LLMDecision(BaseModel):
 
     # Tool plan fields (when action="plan_tools")
     tool_plan: Optional[ToolPlan] = Field(default=None, description="Wave of independent tools to execute")
+
+    # Fireteam plan fields (when action="deploy_fireteam")
+    fireteam_plan: Optional[FireteamPlan] = Field(
+        default=None,
+        description="Deployment of independent fireteam members to execute concurrently",
+    )
 
     # Deep Think self-request (only used when Deep Think is enabled)
     need_deep_think: bool = Field(default=False, description="Set to true if you feel stuck or not progressing, to trigger strategic re-evaluation on next iteration")
@@ -520,6 +649,19 @@ class AgentState(TypedDict):
     # Metasploit state tracking
     msf_session_reset_done: bool  # True if metasploit was reset at start of this session
 
+    # Fireteam (multi-agent) deployment state
+    _current_fireteam_plan: Optional[dict]       # FireteamPlan.model_dump()
+    _current_fireteam_results: Optional[list]    # List[FireteamMemberResult.model_dump()]
+    _fireteam_id: Optional[str]                  # active fireteam identifier
+    _fireteam_start_time: Optional[float]
+    _escalated_fireteam_confirmation: Optional[dict]  # pending_confirmation from a member
+    _escalated_member_id: Optional[str]
+    # Queue of additional pending_confirmation dicts from other members in the
+    # same wave. Drained one-at-a-time by fireteam_collect_node /
+    # process_fireteam_confirmation_node so each escalation gets its own
+    # operator decision. See FIRETEAM.md §20 Q3 ("v1: 3 times").
+    _pending_escalations: Optional[list]
+
 
 # =============================================================================
 # RESPONSE MODELS
@@ -652,6 +794,14 @@ def create_initial_state(
         "_need_deep_think": False,
         # Metasploit state
         "msf_session_reset_done": False,
+        # Fireteam (multi-agent) deployment
+        "_current_fireteam_plan": None,
+        "_current_fireteam_results": None,
+        "_fireteam_id": None,
+        "_fireteam_start_time": None,
+        "_escalated_fireteam_confirmation": None,
+        "_escalated_member_id": None,
+        "_pending_escalations": None,
     }
 
 

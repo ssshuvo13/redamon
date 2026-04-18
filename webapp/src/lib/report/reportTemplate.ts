@@ -443,6 +443,7 @@ ${renderSecrets(data)}
 ${renderJsRecon(data)}
 ${renderOtx(data)}
 ${renderAttackChains(data)}
+${renderFireteams(data)}
 ${renderRecommendations(data, n.recommendationsNarrative)}
 ${renderAppendix(data)}
 
@@ -1331,6 +1332,65 @@ function renderRecommendations(data: ReportData, narrative?: string): string {
 </div>`
 }
 
+function renderFireteams(data: ReportData): string {
+  const ft = data.fireteams
+  if (!ft || ft.totalFireteams === 0) return ''
+
+  const deployments = ft.deployments.map(d => {
+    const members = d.members.map(m => {
+      const badge =
+        m.status === 'success' ? 'badge-ok'
+        : m.status === 'partial' ? 'badge-warn'
+        : m.status === 'needs_confirmation' ? 'badge-warn'
+        : 'badge-err'
+      const skillsStr = (m.skills || []).length > 0 ? (m.skills || []).map(esc).join(', ') : 'none'
+      return `
+        <div class="ft-member">
+          <div class="ft-member-head">
+            <strong>${esc(m.name)}</strong>
+            <span class="${badge}">${esc(m.status)}</span>
+          </div>
+          <div class="ft-member-task">${esc(m.task || '')}</div>
+          <div class="ft-member-meta">
+            Skills: ${skillsStr} &middot;
+            Iterations: ${m.iterationsUsed} &middot;
+            Tokens: ${m.tokensUsed} &middot;
+            Findings: ${m.findingsCount}
+            ${m.wallClockSeconds != null ? ` &middot; ${m.wallClockSeconds.toFixed(1)}s` : ''}
+          </div>
+          ${m.completionReason && m.status !== 'success'
+            ? `<div class="ft-member-reason">Reason: ${esc(m.completionReason)}</div>` : ''}
+          ${m.errorMessage ? `<div class="ft-member-error">Error: ${esc(m.errorMessage)}</div>` : ''}
+        </div>`
+    }).join('')
+    const counts = d.statusCounts ? Object.entries(d.statusCounts).map(([k, v]) => `${v} ${k}`).join(' &middot; ') : ''
+    return `
+      <div class="ft-deployment">
+        <div class="ft-head">
+          <h3>Wave ${d.iteration} <span class="muted">(${esc(d.fireteamIdKey)})</span></h3>
+          <span class="ft-status">${esc(d.status)}</span>
+        </div>
+        ${d.planRationale ? `<p class="ft-rationale">${esc(d.planRationale)}</p>` : ''}
+        <p class="ft-timing muted">
+          ${counts ? `${counts} &middot; ` : ''}
+          Duration: ${d.wallClockSeconds != null ? `${d.wallClockSeconds.toFixed(1)}s` : 'n/a'}
+        </p>
+        <div class="ft-members">${members}</div>
+      </div>`
+  }).join('')
+
+  return `
+<div class="section" id="fireteams">
+  <h2>Multi-Agent Analysis (Fireteam)</h2>
+  <p class="intro">
+    This engagement used ${ft.totalFireteams} parallel fireteam${ft.totalFireteams > 1 ? 's' : ''}
+    across ${ft.totalMembers} specialist member${ft.totalMembers !== 1 ? 's' : ''}, producing
+    ${ft.totalFindings} attributed finding${ft.totalFindings !== 1 ? 's' : ''}.
+  </p>
+  ${deployments}
+</div>`
+}
+
 function renderAppendix(data: ReportData): string {
   const { graphOverview } = data
 
@@ -1626,6 +1686,60 @@ body {
   gap: 24px;
   margin-bottom: 20px;
 }
+
+/* Fireteam (multi-agent) */
+#fireteams .ft-deployment {
+  border-left: 4px solid #2563eb;
+  background: #f5f9ff;
+  padding: 12px 16px;
+  border-radius: 6px;
+  margin: 16px 0;
+}
+#fireteams .ft-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+#fireteams .ft-head h3 { margin: 0; }
+#fireteams .ft-status {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #475569;
+  font-weight: 600;
+}
+#fireteams .ft-rationale {
+  font-size: 13px;
+  color: #475569;
+  margin: 4px 0 8px;
+  font-style: italic;
+}
+#fireteams .ft-timing { font-size: 12px; margin: 4px 0 10px; }
+#fireteams .ft-members {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 10px;
+}
+#fireteams .ft-member {
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 5px;
+  padding: 10px 12px;
+  font-size: 12.5px;
+}
+#fireteams .ft-member-head { display: flex; align-items: center; gap: 8px; }
+#fireteams .ft-member-task { font-style: italic; color: #475569; margin: 4px 0; line-height: 1.45; }
+#fireteams .ft-member-meta { font-size: 11.5px; color: #64748b; }
+#fireteams .ft-member-reason { font-size: 11.5px; color: #92400e; margin-top: 4px; }
+#fireteams .ft-member-error {
+  font-size: 11.5px; color: #b91c1c;
+  background: #fef2f2; padding: 4px 6px;
+  border-left: 2px solid #ef4444; border-radius: 3px;
+  margin-top: 4px;
+}
+#fireteams .badge-ok, #fireteams .badge-warn, #fireteams .badge-err {
+  font-size: 10.5px; padding: 2px 8px; border-radius: 10px; text-transform: uppercase;
+  letter-spacing: 0.04em; font-weight: 600;
+}
+#fireteams .badge-ok { background: #d1fae5; color: #065f46; }
+#fireteams .badge-warn { background: #fef3c7; color: #92400e; }
+#fireteams .badge-err { background: #fee2e2; color: #991b1b; }
 
 /* Misc */
 .muted { color: #94a3b8; font-style: italic; }

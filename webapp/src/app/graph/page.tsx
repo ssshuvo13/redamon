@@ -3,7 +3,7 @@
 import { useState, useRef, useCallback, useEffect, useMemo } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { GraphToolbar } from './components/GraphToolbar'
-import { GraphCanvas } from './components/GraphCanvas'
+import { GraphCanvas, AUTO_2D_THRESHOLD } from './components/GraphCanvas'
 import { NodeDrawer } from './components/NodeDrawer'
 import { AIAssistantDrawer } from './components/AIAssistantDrawer'
 import { PageBottomBar } from './components/PageBottomBar'
@@ -217,10 +217,10 @@ export default function GraphPage() {
   // Check if any agent conversation is active (writes attack chain nodes to graph)
   const isAgentRunning = agentSummary.activeCount > 0
 
-  // Graph data with auto-refresh every 5 seconds while recon or agent is running
+  // Graph data -- polls every 5s only while recon pipeline is running.
+  // Agent sessions refetch reactively via AIAssistantDrawer on WebSocket tool-completion events.
   const { data, isLoading, error, refetch: refetchGraph, refetchFresh } = useGraphData(projectId, {
     isReconRunning,
-    isAgentRunning,
   })
 
   // Execute filter Cypher when selected filter changes or when graph data refreshes
@@ -551,6 +551,10 @@ export default function GraphPage() {
     if (!src) return undefined
     return clusterGraphData(src)
   }, [filterGraphData, filteredGraphData])
+
+  // Clusters count as single nodes for the 3D threshold — use clustered count.
+  const displayedNodeCount = clusteredGraphData?.nodes.length ?? 0
+  const effectiveIs3D = is3D && displayedNodeCount <= AUTO_2D_THRESHOLD
 
   // Effective table rows: use filter data when a data filter is active
   const effectiveTableRows = selectedFilterId ? filterTableRows : filteredByType
@@ -1138,11 +1142,11 @@ export default function GraphPage() {
         onJsReconSearchChange={setJsReconSearch}
         onJsReconExportXlsx={jsReconData ? () => exportJsReconXlsx(jsReconData) : undefined}
         jsReconMeta={jsReconData ? `${jsReconData.scan_metadata?.js_files_analyzed || 0} files${jsReconData.summary?.validated_keys?.live ? ` | ${jsReconData.summary.validated_keys.live} LIVE` : ''}` : undefined}
-        is3D={is3D}
+        is3D={effectiveIs3D}
         showLabels={showLabels}
         onToggle3D={setIs3D}
         onToggleLabels={setShowLabels}
-        nodeCount={data?.nodes.length ?? 0}
+        nodeCount={displayedNodeCount}
       />
 
       <div ref={bodyRef} className={styles.body}>
@@ -1165,7 +1169,7 @@ export default function GraphPage() {
               isLoading={filterLoading || isLoading}
               error={error}
               projectId={projectId || ''}
-              is3D={is3D}
+              is3D={effectiveIs3D}
               width={dimensions.width}
               height={dimensions.height}
               showLabels={showLabels}

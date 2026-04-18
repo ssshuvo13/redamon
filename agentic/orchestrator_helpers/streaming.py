@@ -134,6 +134,15 @@ async def emit_streaming_events(state: dict, callback) -> None:
             cstep = state["_completed_step"]
             cstep_id = _make_event_id("tc", cstep, "tool_name", "output_analysis")
             tool_name = cstep.get("tool_name")
+            # Diagnostic: log the exact gate evaluation so we can spot why
+            # tool_complete isn't firing for fireteam member standalone tools.
+            logger.info(
+                "[diag] tool_complete gate: tool_name=%r success=%r analysis_len=%d id=%r already_emitted=%s cb=%s",
+                tool_name, cstep.get("success"),
+                len(cstep.get("output_analysis") or ""), cstep_id,
+                cstep_id in callback._emitted_tool_complete_ids,
+                type(callback).__name__,
+            )
             if tool_name and tool_name != "tool_rejection" and cstep.get("success") is not None and cstep.get("output_analysis") and cstep_id not in callback._emitted_tool_complete_ids:
                 await callback.on_tool_complete(
                     cstep.get("tool_name", "unknown"),
@@ -141,6 +150,11 @@ async def emit_streaming_events(state: dict, callback) -> None:
                     cstep.get("output_analysis", "")[:10000],
                     actionable_findings=cstep.get("actionable_findings", []),
                     recommended_next_steps=cstep.get("recommended_next_steps", []),
+                    # Thread the wall-clock duration stamped by
+                    # execute_tool_node so the UI card shows the real time
+                    # taken. Without this the member-streaming proxy defaults
+                    # duration_ms to 0 and completed cards render "0s".
+                    duration_ms=cstep.get("duration_ms"),
                 )
                 callback._emitted_tool_complete_ids.add(cstep_id)
 
@@ -162,7 +176,13 @@ async def emit_streaming_events(state: dict, callback) -> None:
                     if file_info:
                         await callback.on_file_ready(file_info)
 
-        # 2. Emit thinking (from _decision stored by _think_node)
+        # 2. Emit thinking (from _decision stored by _think_node).
+        # Threads the decision's `action` through so the UI / restore layer
+        # can distinguish thinks that spawn a fireteam (whose rationale is
+        # already surfaced on the FireteamCard as plan_rationale) from thinks
+        # that precede a regular tool call. Without this, root deploy_fireteam
+        # thinks appeared twice on session restore — once as a standalone
+        # ThinkingItem, once as the fireteam card's rationale.
         if "_decision" in state and state["_decision"]:
             decision = state["_decision"]
             think_id = _make_event_id("th", decision, "thought")
@@ -172,7 +192,8 @@ async def emit_streaming_events(state: dict, callback) -> None:
                         state.get("current_iteration", 0),
                         state.get("current_phase", "informational"),
                         decision.get("thought", ""),
-                        decision.get("reasoning", "")
+                        decision.get("reasoning", ""),
+                        action=decision.get("action"),
                     )
                     callback._emitted_thinking_ids.add(think_id)
                 except Exception as e:

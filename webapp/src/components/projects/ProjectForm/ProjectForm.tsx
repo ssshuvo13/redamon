@@ -554,7 +554,7 @@ export function ProjectForm({
               Export
             </button>
           )}
-          {!(mode === 'edit' && viewMode === 'workflow') && (
+          {!(mode === 'edit' && viewMode === 'workflow' && RECON_TAB_IDS.has(activeTab)) && (
             <button
               type="submit"
               className="primaryButton"

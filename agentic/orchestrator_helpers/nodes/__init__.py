@@ -15,6 +15,9 @@ from .tool_confirmation_nodes import (
     await_tool_confirmation_node,
     process_tool_confirmation_node,
 )
+from .fireteam_deploy_node import fireteam_deploy_node
+from .fireteam_collect_node import fireteam_collect_node
+from .process_fireteam_confirmation_node import process_fireteam_confirmation_node
 
 __all__ = [
     "initialize_node",
@@ -28,4 +31,7 @@ __all__ = [
     "process_answer_node",
     "await_tool_confirmation_node",
     "process_tool_confirmation_node",
+    "fireteam_deploy_node",
+    "fireteam_collect_node",
+    "process_fireteam_confirmation_node",
 ]

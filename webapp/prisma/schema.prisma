@@ -504,7 +504,7 @@ model Project {
   agentToolOutputMaxChars               Int      @default(20000) @map("agent_tool_output_max_chars")
   agentCypherMaxRetries                 Int      @default(3) @map("agent_cypher_max_retries")
   agentLlmParseMaxRetries               Int      @default(3) @map("agent_llm_parse_max_retries")
-  agentDeepThinkEnabled                 Boolean  @default(false) @map("agent_deep_think_enabled")
+  agentDeepThinkEnabled                 Boolean  @default(true) @map("agent_deep_think_enabled")
   agentCreateGraphImageOnInit           Boolean  @default(false) @map("agent_create_graph_image_on_init")
   agentLogMaxMb                         Int      @default(10) @map("agent_log_max_mb")
   agentLogBackupCount                   Int      @default(5) @map("agent_log_backup_count")
@@ -515,6 +515,14 @@ model Project {
   agentBruteForceMaxWordlistAttempts    Int      @default(3) @map("agent_brute_force_max_wordlist_attempts")
   agentBruteforceSpeed                  Int      @default(5) @map("agent_bruteforce_speed")
   agentGuardrailEnabled                 Boolean  @default(true) @map("agent_guardrail_enabled")
+
+  // Fireteam (multi-agent) Settings
+  fireteamEnabled                       Boolean  @default(true)            @map("fireteam_enabled")
+  fireteamMaxConcurrent                 Int      @default(5)               @map("fireteam_max_concurrent")
+  fireteamMaxMembers                    Int      @default(5)               @map("fireteam_max_members")
+  fireteamMemberMaxIterations           Int      @default(20)              @map("fireteam_member_max_iterations")
+  fireteamTimeoutSec                    Int      @default(1800)            @map("fireteam_timeout_sec")
+  fireteamAllowedPhases                 String[] @default(["informational", "exploitation", "post_exploitation"]) @map("fireteam_allowed_phases")
 
   // Hydra Brute Force Settings
   hydraEnabled                          Boolean  @default(true) @map("hydra_enabled")
@@ -702,6 +710,7 @@ model Conversation {
   createdAt      DateTime      @default(now()) @map("created_at")
   updatedAt      DateTime      @updatedAt @map("updated_at")
   messages       ChatMessage[]
+  fireteams      Fireteam[]
 
   @@index([projectId, userId])
   @@map("conversations")
@@ -714,10 +723,74 @@ model ChatMessage {
   sequenceNum    Int          @map("sequence_num")
   type           String
   data           Json
+  memberIdKey    String?      @map("member_id_key")
+  fireteamIdKey  String?      @map("fireteam_id_key")
   createdAt      DateTime     @default(now()) @map("created_at")
 
   @@index([conversationId, sequenceNum])
+  @@index([fireteamIdKey])
+  @@index([memberIdKey])
   @@map("chat_messages")
+}
+
+model Fireteam {
+  id                   String           @id @default(cuid())
+  parentConversationId String           @map("parent_conversation_id")
+  parentConversation   Conversation     @relation(fields: [parentConversationId], references: [id], onDelete: Cascade)
+  parentSessionId      String           @map("parent_session_id")
+  fireteamIdKey        String           @unique @map("fireteam_id_key")
+  fireteamNumber       Int              @map("fireteam_number")
+  iteration            Int
+  status               String           @default("pending")
+  memberCount          Int              @map("member_count")
+  planRationale        String?          @map("plan_rationale") @db.Text
+  statusCounts         Json?            @map("status_counts")
+  wallClockSeconds     Float?           @map("wall_clock_seconds")
+  startedAt            DateTime         @default(now()) @map("started_at")
+  completedAt          DateTime?        @map("completed_at")
+  members              FireteamMember[]
+
+  @@index([parentConversationId, fireteamNumber])
+  @@index([parentSessionId])
+  @@map("fireteams")
+}
+
+model FireteamSettingsAudit {
+  id         String   @id @default(cuid())
+  projectId  String   @map("project_id")
+  userId     String?  @map("user_id")
+  field      String                                  // e.g. "fireteamEnabled", "fireteamMaxConcurrent"
+  oldValue   Json?    @map("old_value")
+  newValue   Json?    @map("new_value")
+  source     String   @default("api")                // "api" | "ui" | "import" | "admin"
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  @@index([projectId, createdAt])
+  @@index([field])
+  @@map("fireteam_settings_audit")
+}
+
+model FireteamMember {
+  id               String    @id @default(cuid())
+  fireteamId       String    @map("fireteam_id")
+  fireteam         Fireteam  @relation(fields: [fireteamId], references: [id], onDelete: Cascade)
+  memberIdKey      String    @unique @map("member_id_key")
+  name             String
+  task             String    @db.Text
+  skills           String[]
+  status           String    @default("running")
+  completionReason String?   @map("completion_reason")
+  iterationsUsed   Int       @default(0) @map("iterations_used")
+  tokensUsed       Int       @default(0) @map("tokens_used")
+  findingsCount    Int       @default(0) @map("findings_count")
+  wallClockSeconds Float?    @map("wall_clock_seconds")
+  errorMessage     String?   @map("error_message") @db.Text
+  resultBlob       Json?     @map("result_blob")
+  startedAt        DateTime  @default(now()) @map("started_at")
+  completedAt      DateTime? @map("completed_at")
+
+  @@index([fireteamId])
+  @@map("fireteam_members")
 }
 
 model Remediation {

@@ -11,14 +11,16 @@ import { FileDownloadCard } from './FileDownloadCard'
 import { TodoListWidget } from './TodoListWidget'
 import { SuggestionPanels } from './SuggestionPanels'
 import { extractTextFromChildren } from './phaseConfig'
-import type { ChatItem, Message, FileDownloadItem } from './types'
+import type { ChatItem, Message, FileDownloadItem, FireteamItem } from './types'
 import type { ThinkingItem, ToolExecutionItem, PlanWaveItem, DeepThinkItem } from './AgentTimeline'
 import styles from './AIAssistantDrawer.module.css'
 import type { TodoItem } from '@/lib/websocket-types'
 
+type TimelineGroupItem = ThinkingItem | ToolExecutionItem | PlanWaveItem | DeepThinkItem | FireteamItem
+
 type GroupedItem = {
   type: 'message' | 'timeline' | 'file_download'
-  content: Message | Array<ThinkingItem | ToolExecutionItem | PlanWaveItem | DeepThinkItem> | FileDownloadItem
+  content: Message | TimelineGroupItem[] | FileDownloadItem
 }
 
 interface ChatAreaProps {
@@ -249,7 +251,7 @@ export function ChatArea({
               />
             )
           } else {
-            const items = groupItem.content as Array<ThinkingItem | ToolExecutionItem | PlanWaveItem | DeepThinkItem>
+            const items = groupItem.content as TimelineGroupItem[]
             return (
               <AgentTimeline
                 key={`timeline-${index}`}

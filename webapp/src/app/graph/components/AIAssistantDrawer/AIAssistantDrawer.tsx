@@ -222,11 +222,13 @@ export function AIAssistantDrawer({
     awaitingQuestionRef, isProcessingQuestion,
     awaitingToolConfirmationRef, isProcessingToolConfirmation,
     pendingApprovalToolId, pendingApprovalWaveId,
+    onGraphMutation: onRefetchGraph,
   })
 
   const {
     status, isConnected, reconnectAttempt,
     sendQuery, sendGuidance, sendApproval, sendToolConfirmation,
+    sendFireteamMemberConfirmation,
     sendAnswer, sendSkillInject, sendStop, sendResume,
   } = useAgentWebSocket({
     userId,
@@ -249,6 +251,7 @@ export function AIAssistantDrawer({
     handleKeyDown,
     handleInputChange,
     activateSkill,
+    userResizedRef,
   } = useSendHandlers({
     inputValue, setInputValue,
     isLoading, setIsLoading, setIsStopped, setIsStopping,
@@ -262,7 +265,7 @@ export function AIAssistantDrawer({
     isProcessingQuestion, awaitingQuestionRef,
     isProcessingToolConfirmation, awaitingToolConfirmationRef,
     pendingApprovalToolId, pendingApprovalWaveId,
-    sendQuery, sendGuidance, sendSkillInject, sendApproval, sendToolConfirmation, sendAnswer, sendStop, sendResume,
+    sendQuery, sendGuidance, sendSkillInject, sendApproval, sendToolConfirmation, sendFireteamMemberConfirmation, sendAnswer, sendStop, sendResume,
     conversationId, setConversationId, projectId, userId, sessionId,
     createConversation, saveMessage, updateConvMeta,
   })
@@ -427,6 +430,7 @@ export function AIAssistantDrawer({
         activeSkill={activeSkill}
         setActiveSkill={setActiveSkill}
         onSkillActivate={activateSkill}
+        userResizedRef={userResizedRef}
       />
 
       <ApiKeyModal

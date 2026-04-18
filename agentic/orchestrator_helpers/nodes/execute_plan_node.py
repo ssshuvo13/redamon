@@ -91,6 +91,7 @@ async def _execute_single_step(
                 await streaming_cb.on_tool_start(tool_name, tool_args, wave_id=wave_id, step_index=step_index)
                 await streaming_cb.on_tool_complete(
                     tool_name, False, roe_msg, wave_id=wave_id, step_index=step_index,
+                    duration_ms=0,
                 )
             except Exception as e:
                 logger.warning(f"Error emitting RoE block events: {e}")
@@ -104,6 +105,8 @@ async def _execute_single_step(
             logger.warning(f"Error emitting tool_start: {e}")
 
     # Execute the tool
+    import time as _time
+    _step_t0 = _time.monotonic()
     try:
         is_long_running_msf = (
             tool_name == "metasploit_console" and
@@ -132,6 +135,7 @@ async def _execute_single_step(
     except Exception as e:
         logger.error(f"Tool execution error for {tool_name}: {e}")
         result = {"success": False, "error": str(e), "output": f"Error: {e}"}
+    step["duration_ms"] = int((_time.monotonic() - _step_t0) * 1000)
 
     # Store result
     if result:
@@ -169,6 +173,7 @@ async def _execute_single_step(
                 "",
                 wave_id=wave_id,
                 step_index=step_index,
+                duration_ms=step.get("duration_ms"),
             )
         except Exception as e:
             logger.warning(f"Error emitting tool_complete: {e}")
@@ -240,7 +245,8 @@ async def execute_plan_node(
         set_graph_view_context(graph_view_cyphers.get(session_id))
 
     # Get streaming callback
-    streaming_cb = streaming_callbacks.get(session_id)
+    from orchestrator_helpers.member_streaming import resolve_streaming_callback
+    streaming_cb = resolve_streaming_callback(streaming_callbacks, session_id)
 
     # Emit plan_start
     tool_names = [s.get("tool_name", "unknown") for s in steps]

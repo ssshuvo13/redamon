@@ -3,6 +3,7 @@
 import { memo, useState, useRef, useEffect, useCallback } from 'react'
 import { Waypoints, Table2, Terminal, Shield, Search, Download, SquareTerminal, Filter, Plus, Trash2, X, ChevronDown, Code } from 'lucide-react'
 import { Toggle } from '@/components/ui'
+import { AUTO_2D_THRESHOLD } from '../GraphCanvas'
 import styles from './ViewTabs.module.css'
 
 export type ViewMode = 'graph' | 'graphViews' | 'table' | 'sessions' | 'terminal' | 'roe'
@@ -285,13 +286,13 @@ export const ViewTabs = memo(function ViewTabs({
       <div className={styles.rightSection}>
       {activeView === 'graph' && onToggle3D && onToggleLabels && (
         <div className={styles.viewToggles}>
-          <div title={nodeCount > 1000 ? `3D disabled: graph has ${nodeCount.toLocaleString()} nodes (max 1,000 for 3D)` : undefined}>
+          <div title={nodeCount > AUTO_2D_THRESHOLD ? `3D disabled: graph has ${nodeCount.toLocaleString()} nodes (max ${AUTO_2D_THRESHOLD.toLocaleString()} for 3D)` : undefined}>
             <Toggle
-              checked={nodeCount > 1000 ? false : (is3D ?? false)}
+              checked={nodeCount > AUTO_2D_THRESHOLD ? false : (is3D ?? false)}
               onChange={onToggle3D}
               labelOff="2D"
               labelOn="3D"
-              disabled={nodeCount > 1000}
+              disabled={nodeCount > AUTO_2D_THRESHOLD}
               aria-label="Toggle 2D/3D view"
             />
           </div>

@@ -94,6 +94,10 @@ class HealthResponse(BaseModel):
     version: str
     tools_loaded: int
     active_sessions: int
+    # Fireteam (multi-agent) observability
+    fireteam_enabled: bool = False
+    persistent_checkpointer: bool = False
+    active_waves: int = 0
 
 
 # =============================================================================
@@ -411,11 +415,27 @@ async def health():
 
     sessions_count = get_session_count()
 
+    # Count in-flight fireteam waves by scanning active asyncio tasks for
+    # names starting with "fireteam-" (set by fireteam_deploy_node). Cheap
+    # probe — no DB roundtrip.
+    active_waves = 0
+    try:
+        for task in asyncio.all_tasks():
+            name = task.get_name() or ""
+            if name.startswith("fireteam-"):
+                active_waves += 1
+    except Exception:
+        pass
+
+    from project_settings import get_setting
     return HealthResponse(
         status="ok" if orchestrator and orchestrator._initialized else "initializing",
         version="3.0.0",
         tools_loaded=tools_count,
-        active_sessions=sessions_count
+        active_sessions=sessions_count,
+        fireteam_enabled=bool(get_setting("FIRETEAM_ENABLED", False)),
+        persistent_checkpointer=bool(get_setting("PERSISTENT_CHECKPOINTER", False)),
+        active_waves=active_waves,
     )
 
 
@@ -471,7 +491,9 @@ async def get_defaults():
 
     # HYDRA_* keys map to Prisma fields without the 'agent' prefix
     # (e.g. HYDRA_ENABLED -> hydraEnabled, not agentHydraEnabled)
-    NO_PREFIX_KEYS = {k for k in DEFAULT_AGENT_SETTINGS if k.startswith(('HYDRA_', 'PHISHING_', 'ROE_', 'ATTACK_SKILL_', 'SHODAN_', 'DOS_'))}
+    NO_PREFIX_KEYS = {k for k in DEFAULT_AGENT_SETTINGS if k.startswith(('HYDRA_', 'PHISHING_', 'ROE_', 'ATTACK_SKILL_', 'SHODAN_', 'DOS_', 'FIRETEAM_'))}
+    # Exclude internal-only fireteam keys that the frontend should not see.
+    SKIP_KEYS = SKIP_KEYS | {'FIRETEAM_TOOL_TIMEOUT_S', 'PERSISTENT_CHECKPOINTER'}
 
     camel_case_defaults = {}
     for k, v in DEFAULT_AGENT_SETTINGS.items():

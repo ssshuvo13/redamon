@@ -104,7 +104,10 @@ async def execute_tool_node(
     is_long_running_hydra = (tool_name == "execute_hydra")
 
     # Execute the tool (with progress streaming for long-running commands)
-    streaming_cb = streaming_callbacks.get(session_id)
+    from orchestrator_helpers.member_streaming import resolve_streaming_callback
+    import time as _time
+    streaming_cb = resolve_streaming_callback(streaming_callbacks, session_id)
+    _tool_t0 = _time.monotonic()
     if is_long_running_msf and streaming_cb:
         logger.info(f"[{user_id}/{project_id}/{session_id}] Using execute_with_progress for long-running MSF command")
         result = await tool_executor.execute_with_progress(
@@ -124,6 +127,11 @@ async def execute_tool_node(
         )
     else:
         result = await tool_executor.execute(tool_name, tool_args, phase)
+    # Record wall-clock duration on the step so the UI can show "17.3s" on
+    # the tool card. Without this, emit_streaming_events had nothing to
+    # pass into on_tool_complete(duration_ms=...) and the frontend reducer
+    # patched `duration: 0` on the completed ToolExecutionItem.
+    step_data["duration_ms"] = int((_time.monotonic() - _tool_t0) * 1000)
 
     # Update step with output (handle None result)
     if result:

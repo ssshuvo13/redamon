@@ -162,6 +162,12 @@ Bug bounty hunters triaging a new target. You want to know if there are quick wi
     nucleiScanAllIps: false,
     nucleiInteractsh: true,
 
+    // --- Subdomain Takeover: enabled (high-value bug bounty finding) ---
+    subdomainTakeoverEnabled: true,
+    subjackEnabled: true,
+    nucleiTakeoversEnabled: true,
+    takeoverSeverity: ['critical', 'high', 'medium'],
+
     // --- GraphQL: OFF by default. "Quick" preset skips niche scans that add
     //     30s-2min per BaseURL. Users can enable per-project if the target is GraphQL. ---
 

@@ -79,6 +79,10 @@ describe('PARTIAL_RECON_SUPPORTED_TOOLS', () => {
     expect(PARTIAL_RECON_SUPPORTED_TOOLS.has('GraphqlScan')).toBe(true)
   })
 
+  test('contains SubdomainTakeover', () => {
+    expect(PARTIAL_RECON_SUPPORTED_TOOLS.has('SubdomainTakeover')).toBe(true)
+  })
+
   test('does not contain unsupported tools', () => {
     expect(PARTIAL_RECON_SUPPORTED_TOOLS.has('GVM')).toBe(false)
   })
@@ -159,6 +163,11 @@ describe('PARTIAL_RECON_PHASE_MAP', () => {
   test('has Nuclei phases', () => {
     expect(PARTIAL_RECON_PHASE_MAP['Nuclei']).toHaveLength(1)
     expect(PARTIAL_RECON_PHASE_MAP['Nuclei'][0]).toBe('Vulnerability Scanning')
+  })
+
+  test('has SubdomainTakeover phases', () => {
+    expect(PARTIAL_RECON_PHASE_MAP['SubdomainTakeover']).toHaveLength(1)
+    expect(PARTIAL_RECON_PHASE_MAP['SubdomainTakeover'][0]).toBe('Subdomain Takeover Detection')
   })
 
   test('has GraphqlScan phases (Phase 1 §9.5)', () => {

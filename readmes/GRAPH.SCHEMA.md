@@ -612,7 +612,7 @@ Discovered vulnerabilities. Six sources produce Vulnerability nodes, each with d
     id: String,                              // Unique identifier
     user_id: String,                         // Multi-tenant isolation
     project_id: String,                      // Multi-tenant isolation
-    source: "nuclei" | "gvm" | "security_check" | "netlas" | "nmap_nse" | "graphql_scan",  // Scanner source
+    source: "nuclei" | "gvm" | "security_check" | "netlas" | "nmap_nse" | "graphql_scan" | "takeover_scan",  // Scanner source
     name: String,                            // Vulnerability name
     description: String,                     // Description
     severity: "critical" | "high" | "medium" | "low" | "info",  // Always lowercase
@@ -785,6 +785,33 @@ Vulnerability types emitted by `graphql_cop` (external scanner, Phase 2):
 Each `graphql_cop` Vulnerability's `evidence` field is a JSON blob containing `curl_verify` (a reproducer cURL command), `raw_severity` (graphql-cop's uppercase severity), and `graphql_cop_key` (internal test identifier).
 
 Deterministic ID pattern: `graphql_{vulnerability_type}_{baseurl}_{path}` (colons, slashes, dots replaced with `_`). Enables MERGE-based deduplication across re-scans AND across scanners — if `graphql_cop` and the native scanner both detect introspection, they merge into one Vulnerability node.
+
+**Subdomain-takeover-specific properties (source = "takeover_scan"):**
+```cypher
+(:Vulnerability {
+    id: "takeover_<sha1-hex16>",              // hash(hostname+provider+method)
+    source: "takeover_scan",
+    type: "subdomain_takeover",
+    name: "Subdomain Takeover — Heroku (CNAME)",
+    severity: "high" | "medium" | "info",     // driven by verdict + scorer
+
+    // Takeover-specific
+    hostname: "promo.acme.com",                // subdomain flagged as takeover-prone
+    cname_target: "acme-spring.herokuapp.com", // destination when CNAME-based (nullable)
+    takeover_provider: "heroku",               // github-pages | heroku | aws-s3 | fastly | azure-* | ...
+    takeover_method: "cname" | "dns" | "ns" | "mx" | "stale_a",
+    confidence: 85,                            // 0..100 integer
+    sources: ["subjack", "nuclei_takeover"],   // tools that confirmed the finding
+    confirmation_count: 2,
+    verdict: "confirmed" | "likely" | "manual_review",
+    evidence: "Subjack confirmed Heroku takeover",
+    tool_raw: "{...}",                         // JSON-encoded raw per-tool output (truncated to 50KB)
+    first_seen: "2026-04-21T12:34:56Z",
+    last_seen:  "2026-04-21T12:34:56Z",
+})
+```
+
+Layered scanner: **Subjack** (DNS-first, Apache-2.0 Go binary baked into the recon image) + **Nuclei** with `-t http/takeovers/ -t dns/` against alive URLs. Findings are deduplicated by `(hostname, takeover_provider, takeover_method)`, then scored. A `verdict` of `manual_review` implies `severity="info"` to keep low-confidence findings out of the main alert stream unless the project's `takeoverManualReviewAutoPublish` setting is true. Relationship: `(:Subdomain)-[:HAS_VULNERABILITY]->(:Vulnerability)`; falls back to `(:Domain)` for the apex.
 
 **Constraints:**
 ```cypher

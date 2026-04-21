@@ -11,7 +11,7 @@ SKIPKBASE_FLAG_FILE="$SCRIPT_DIR/.skipkbase"
 
 # Service lists
 CORE_SERVICES="postgres neo4j recon-orchestrator kali-sandbox agent webapp"
-TOOL_IMAGES="redamon-recon:latest redamon-vuln-scanner:latest redamon-github-hunter:latest redamon-trufflehog:latest"
+TOOL_IMAGES="redamon-recon:latest redamon-vuln-scanner:latest redamon-github-hunter:latest redamon-trufflehog:latest redamon-baddns:latest"
 DEV_COMPOSE="-f docker-compose.yml -f docker-compose.dev.yml"
 
 # Colors
@@ -721,6 +721,9 @@ cmd_update() {
         fi
         if echo "$changed_files" | grep -q "^trufflehog_scan/"; then
             rebuild_tools+=(trufflehog-scanner)
+        fi
+        if echo "$changed_files" | grep -q "^baddns_scan/"; then
+            rebuild_tools+=(baddns-scanner)
         fi
     fi
 

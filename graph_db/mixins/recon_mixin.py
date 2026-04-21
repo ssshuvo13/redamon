@@ -23,6 +23,7 @@ from graph_db.mixins.recon.vuln_mixin import VulnMixin
 from graph_db.mixins.recon.resource_mixin import ResourceMixin
 from graph_db.mixins.recon.js_recon_mixin import JsReconMixin
 from graph_db.mixins.recon.user_input_mixin import UserInputMixin
+from graph_db.mixins.recon.takeover_mixin import TakeoverMixin
 
 
 class ReconMixin(
@@ -33,5 +34,6 @@ class ReconMixin(
     ResourceMixin,
     JsReconMixin,
     UserInputMixin,
+    TakeoverMixin,
 ):
     pass

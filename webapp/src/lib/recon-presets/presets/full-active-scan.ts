@@ -212,6 +212,16 @@ Pentesters with full authorization on an engagement where stealth is irrelevant.
     nucleiScanAllIps: true,
     nucleiInteractsh: true,
 
+    // --- Subdomain Takeover: all layers on ---
+    subdomainTakeoverEnabled: true,
+    subjackEnabled: true,
+    subjackAll: true,
+    subjackCheckNs: true,
+    subjackCheckAr: true,
+    subjackCheckMail: true,
+    nucleiTakeoversEnabled: true,
+    takeoverSeverity: ['critical', 'high', 'medium', 'low'],
+
     // --- GraphQL Security: full active coverage ---
     graphqlSecurityEnabled: true,
     graphqlCopEnabled: true,

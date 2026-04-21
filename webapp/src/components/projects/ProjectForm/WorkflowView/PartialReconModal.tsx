@@ -140,6 +140,12 @@ const TOOL_DESCRIPTIONS: Record<string, string> = {
     'Targets are loaded from the graph (BaseURLs + Endpoints from prior phases). ' +
     'You can also provide custom URLs below. ' +
     'Vulnerability, CVE, Endpoint, Parameter, MitreData, and Capec nodes are merged into the existing graph.',
+  SubdomainTakeover:
+    'Layered subdomain takeover detection. Runs Subjack (DNS-first, fingerprints CNAME/NS/MX against known takeover-prone services) and ' +
+    'Nuclei with takeover-only templates (-t http/takeovers/ -t dns/) against alive URLs. ' +
+    'Findings are deduplicated across tools, scored (confirmed / likely / manual_review), and written as Vulnerability nodes ' +
+    'with source="takeover_scan". Targets are loaded from the graph (Subdomains + alive URLs). ' +
+    'You can also provide custom subdomains below.',
   GraphqlScan:
     'Active GraphQL security scanner. Discovers GraphQL endpoints from crawled BaseURLs + Endpoints + JS findings, ' +
     'tests for exposed introspection, extracts schema, detects sensitive field exposure, and flags mutation / proxy ' +
@@ -397,9 +403,10 @@ export function PartialReconModal({
   const isParamSpider = toolId === 'ParamSpider'
   const isShodan = toolId === 'Shodan'
   const isOsintEnrichment = toolId === 'OsintEnrichment'
-  const hasUserInputs = isPortScanner || isNmap || isHttpx || isResourceEnum || isArjun || isGau || isParamSpider || isSecurityChecks || isShodan || isOsintEnrichment || isGraphql
+  const isSubdomainTakeover = toolId === 'SubdomainTakeover'
+  const hasUserInputs = isPortScanner || isNmap || isHttpx || isResourceEnum || isArjun || isGau || isParamSpider || isSecurityChecks || isShodan || isOsintEnrichment || isGraphql || isSubdomainTakeover
   const hasIpInput = isPortScanner || isNmap || isHttpx || isSecurityChecks || isShodan || isOsintEnrichment
-  const hasSubdomainInput = toolId === 'Naabu' || isHttpx || isGau || isParamSpider || isSecurityChecks
+  const hasSubdomainInput = toolId === 'Naabu' || isHttpx || isGau || isParamSpider || isSecurityChecks || isSubdomainTakeover
   const hasPortInput = isNmap || isHttpx
   // GraphqlScan's SECTION_INPUT_MAP = [BaseURL, Endpoint]. Per PROMPT.ADD_PARTIAL_RECON.md,
   // BaseURL-accepting tools get a URL textarea; Endpoint is graph-only (never manually entered).

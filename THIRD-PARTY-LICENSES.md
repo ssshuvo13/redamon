@@ -55,6 +55,8 @@ These tools are either installed in Docker images or pulled as Docker containers
 | **Arjun** | HTTP hidden parameter discovery | AGPL-3.0 | https://github.com/s0md3v/Arjun | Installed via `pip` in `recon/requirements.txt` |
 | **ParamSpider** | URL parameter mining from web archives | MIT | https://github.com/devanshbatham/ParamSpider | Installed via `pip` (git) in `recon/requirements.txt` |
 | **TruffleHog** | Credential and secret scanning | AGPL-3.0 | https://github.com/trufflesecurity/trufflehog | Pulled as Docker image `trufflesecurity/trufflehog:latest` at runtime; also installed as binary in `trufflehog_scan/Dockerfile` |
+| **Subjack** | Subdomain takeover detection (CNAME/NS/MX/SPF + stale A records) | Apache-2.0 | https://github.com/haccer/subjack | Built from source via `go install` in `recon/Dockerfile` (multi-stage); invoked as native binary inside the recon container |
+| **BadDNS** | Deep DNS takeover detection (CNAME/NS/MX/TXT/SPF/DMARC/MTA-STS/wildcard/NSEC/references/zonetransfer modules) | **AGPL-3.0** | https://github.com/blacklanternsecurity/baddns | **Isolated in its own Docker image `redamon-baddns:latest`** (built from `baddns_scan/Dockerfile` via `pip install baddns`). RedAmon never imports from this package. The recon container spawns the sidecar via `docker run --rm` and receives results as NDJSON on stdout. The process + filesystem boundary preserves the AGPL-3.0 license scope. Upstream source code is available at the linked repository. |
 
 ---
 

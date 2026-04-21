@@ -212,6 +212,16 @@ Bug bounty hunters who have already triaged a target (perhaps with the Quick Win
     nucleiScanAllIps: false,
     nucleiInteractsh: true,
 
+    // --- Subdomain Takeover: all layers on (bug bounty gold) ---
+    subdomainTakeoverEnabled: true,
+    subjackEnabled: true,
+    subjackAll: true,
+    subjackCheckNs: true,
+    subjackCheckMail: true,
+    nucleiTakeoversEnabled: true,
+    takeoverSeverity: ['critical', 'high', 'medium', 'low'],
+    takeoverConfidenceThreshold: 55,
+
     // --- GraphQL Security: coverage for deep hunt, but DoS probes OFF.
     //     This preset's mission ("balanced to avoid IP bans", "moderate concurrency
     //     to stay under WAF thresholds") is incompatible with graphql-cop's four

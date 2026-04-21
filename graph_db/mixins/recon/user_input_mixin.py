@@ -557,6 +557,33 @@ class UserInputMixin:
                     "source": "graph" if record["domain"] else "settings",
                 }
 
+            elif tool_id == "SubdomainTakeover":
+                # Subdomain list + domain for the takeover scanner. Matches the
+                # SubdomainDiscovery input shape because takeover operates on
+                # the same input class (subdomains). BaseURL count is also
+                # returned so the UI can show whether Nuclei-takeover templates
+                # will have anything to scan.
+                result = session.run(
+                    """
+                    OPTIONAL MATCH (d:Domain {user_id: $uid, project_id: $pid})
+                    OPTIONAL MATCH (d)-[:HAS_SUBDOMAIN]->(s:Subdomain)
+                    OPTIONAL MATCH (s)-[:HAS_BASEURL]->(bu:BaseURL)
+                    WITH d, collect(DISTINCT s.name) AS subdomains,
+                         count(DISTINCT bu) AS baseurl_count
+                    RETURN d.name AS domain, subdomains,
+                           size(subdomains) AS sub_count, baseurl_count
+                    """,
+                    uid=user_id, pid=project_id,
+                )
+                record = result.single()
+                return {
+                    "domain": record["domain"] if record["domain"] else None,
+                    "existing_subdomains": record["subdomains"] or [],
+                    "existing_subdomains_count": record["sub_count"] or 0,
+                    "existing_baseurls_count": record["baseurl_count"] or 0,
+                    "source": "graph" if record["domain"] else "settings",
+                }
+
             elif tool_id == "OsintEnrichment":
                 # Get domain, subdomain names (for dropdown), and IP count for OSINT enrichment
                 result = session.run(

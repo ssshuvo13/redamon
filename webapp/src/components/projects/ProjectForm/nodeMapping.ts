@@ -24,6 +24,7 @@ export const SECTION_INPUT_MAP: Record<string, string[]> = {
   JsRecon:            ['BaseURL', 'Endpoint'],
   GraphqlScan:        ['BaseURL', 'Endpoint'],
   Mitre:              ['CVE'],
+  SubdomainTakeover:  ['Subdomain', 'BaseURL', 'Domain'],
 }
 
 export const SECTION_NODE_MAP: Record<string, string[]> = {
@@ -52,6 +53,7 @@ export const SECTION_NODE_MAP: Record<string, string[]> = {
   JsRecon:            ['Secret', 'Endpoint'],
   GraphqlScan:        ['Vulnerability', 'Endpoint'],
   Mitre:              ['MitreData', 'Capec'],
+  SubdomainTakeover:  ['Vulnerability'],
 }
 
 export const SECTION_ENRICH_MAP: Record<string, string[]> = {

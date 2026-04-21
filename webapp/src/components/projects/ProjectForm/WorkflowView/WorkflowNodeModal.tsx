@@ -26,6 +26,7 @@ import { ArjunSection } from '../sections/ArjunSection'
 import { JsReconSection } from '../sections/JsReconSection'
 import { NucleiSection } from '../sections/NucleiSection'
 import { GraphqlScanSection } from '../sections/GraphqlScanSection'
+import { TakeoverSection } from '../sections/TakeoverSection'
 import { CveLookupSection } from '../sections/CveLookupSection'
 import { MitreSection } from '../sections/MitreSection'
 import { SecurityChecksSection } from '../sections/SecurityChecksSection'
@@ -97,6 +98,7 @@ export function WorkflowNodeModal({
       case 'JsRecon':           return <JsReconSection {...extendedProps} />
       case 'Nuclei':            return <NucleiSection {...baseProps} />
       case 'GraphqlScan':       return <GraphqlScanSection {...extendedProps} />
+      case 'SubdomainTakeover': return <TakeoverSection {...baseProps} />
       case 'CveLookup':         return <CveLookupSection {...baseProps} />
       case 'Mitre':             return <MitreSection {...baseProps} />
       case 'SecurityChecks':    return <SecurityChecksSection {...baseProps} />

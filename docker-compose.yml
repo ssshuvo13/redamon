@@ -254,6 +254,17 @@ services:
     image: redamon-trufflehog:latest
     profiles: ["tools"]
 
+  # BadDNS (AGPL-3.0) runs isolated in its own container. RedAmon never
+  # imports or links against it -- the recon container spawns this image
+  # via Docker-in-Docker and receives NDJSON on stdout. See baddns_scan/
+  # Dockerfile and THIRD-PARTY-LICENSES.md for the license boundary.
+  baddns-scanner:
+    build:
+      context: .
+      dockerfile: baddns_scan/Dockerfile
+    image: redamon-baddns:latest
+    profiles: ["tools"]
+
   # ===========================================================================
   # Backend Services
   # ===========================================================================

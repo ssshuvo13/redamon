@@ -167,6 +167,32 @@ DEFAULT_SETTINGS: dict[str, Any] = {
     'NUCLEI_INTERACTSH': True,
     'NUCLEI_DOCKER_IMAGE': 'projectdiscovery/nuclei:latest',
 
+    # Subdomain Takeover Scanner (Subjack + Nuclei takeover templates)
+    # Runs in GROUP 6 Phase A alongside Nuclei; writes Vulnerability nodes
+    # with source="takeover_scan". See recon/main_recon_modules/subdomain_takeover.py.
+    'SUBDOMAIN_TAKEOVER_ENABLED': False,
+    'SUBJACK_ENABLED': True,
+    'SUBJACK_THREADS': 10,
+    'SUBJACK_TIMEOUT': 30,
+    'SUBJACK_SSL': True,
+    'SUBJACK_ALL': False,
+    'SUBJACK_CHECK_NS': False,
+    'SUBJACK_CHECK_AR': False,
+    'SUBJACK_CHECK_MAIL': False,
+    'SUBJACK_RUN_TIMEOUT': 900,
+    'NUCLEI_TAKEOVERS_ENABLED': True,
+    'NUCLEI_TAKEOVER_RUN_TIMEOUT': 1800,
+    'TAKEOVER_SEVERITY': ['critical', 'high', 'medium'],
+    'TAKEOVER_CONFIDENCE_THRESHOLD': 60,
+    'TAKEOVER_RATE_LIMIT': 50,
+    'TAKEOVER_MANUAL_REVIEW_AUTO_PUBLISH': False,
+    # BadDNS (AGPL-3.0, isolated sidecar — disabled by default, opt-in)
+    'BADDNS_ENABLED': False,
+    'BADDNS_DOCKER_IMAGE': 'redamon-baddns:latest',
+    'BADDNS_MODULES': ['cname', 'ns', 'mx', 'txt', 'spf'],
+    'BADDNS_NAMESERVERS': [],
+    'BADDNS_RUN_TIMEOUT': 1800,
+
     # Katana Web Crawler
     'KATANA_ENABLED': True,
     'KATANA_DOCKER_IMAGE': 'projectdiscovery/katana:latest',
@@ -746,6 +772,29 @@ def fetch_project_settings(project_id: str, webapp_url: str) -> dict[str, Any]:
     settings['NUCLEI_INTERACTSH'] = project.get('nucleiInteractsh', DEFAULT_SETTINGS['NUCLEI_INTERACTSH'])
     settings['NUCLEI_DOCKER_IMAGE'] = project.get('nucleiDockerImage', DEFAULT_SETTINGS['NUCLEI_DOCKER_IMAGE'])
 
+    # Subdomain Takeover Scanner
+    settings['SUBDOMAIN_TAKEOVER_ENABLED'] = project.get('subdomainTakeoverEnabled', DEFAULT_SETTINGS['SUBDOMAIN_TAKEOVER_ENABLED'])
+    settings['SUBJACK_ENABLED'] = project.get('subjackEnabled', DEFAULT_SETTINGS['SUBJACK_ENABLED'])
+    settings['SUBJACK_THREADS'] = project.get('subjackThreads', DEFAULT_SETTINGS['SUBJACK_THREADS'])
+    settings['SUBJACK_TIMEOUT'] = project.get('subjackTimeout', DEFAULT_SETTINGS['SUBJACK_TIMEOUT'])
+    settings['SUBJACK_SSL'] = project.get('subjackSsl', DEFAULT_SETTINGS['SUBJACK_SSL'])
+    settings['SUBJACK_ALL'] = project.get('subjackAll', DEFAULT_SETTINGS['SUBJACK_ALL'])
+    settings['SUBJACK_CHECK_NS'] = project.get('subjackCheckNs', DEFAULT_SETTINGS['SUBJACK_CHECK_NS'])
+    settings['SUBJACK_CHECK_AR'] = project.get('subjackCheckAr', DEFAULT_SETTINGS['SUBJACK_CHECK_AR'])
+    settings['SUBJACK_CHECK_MAIL'] = project.get('subjackCheckMail', DEFAULT_SETTINGS['SUBJACK_CHECK_MAIL'])
+    settings['SUBJACK_RUN_TIMEOUT'] = project.get('subjackRunTimeout', DEFAULT_SETTINGS['SUBJACK_RUN_TIMEOUT'])
+    settings['NUCLEI_TAKEOVERS_ENABLED'] = project.get('nucleiTakeoversEnabled', DEFAULT_SETTINGS['NUCLEI_TAKEOVERS_ENABLED'])
+    settings['NUCLEI_TAKEOVER_RUN_TIMEOUT'] = project.get('nucleiTakeoverRunTimeout', DEFAULT_SETTINGS['NUCLEI_TAKEOVER_RUN_TIMEOUT'])
+    settings['TAKEOVER_SEVERITY'] = project.get('takeoverSeverity', DEFAULT_SETTINGS['TAKEOVER_SEVERITY'])
+    settings['TAKEOVER_CONFIDENCE_THRESHOLD'] = project.get('takeoverConfidenceThreshold', DEFAULT_SETTINGS['TAKEOVER_CONFIDENCE_THRESHOLD'])
+    settings['TAKEOVER_RATE_LIMIT'] = project.get('takeoverRateLimit', DEFAULT_SETTINGS['TAKEOVER_RATE_LIMIT'])
+    settings['TAKEOVER_MANUAL_REVIEW_AUTO_PUBLISH'] = project.get('takeoverManualReviewAutoPublish', DEFAULT_SETTINGS['TAKEOVER_MANUAL_REVIEW_AUTO_PUBLISH'])
+    settings['BADDNS_ENABLED'] = project.get('baddnsEnabled', DEFAULT_SETTINGS['BADDNS_ENABLED'])
+    settings['BADDNS_DOCKER_IMAGE'] = project.get('baddnsDockerImage', DEFAULT_SETTINGS['BADDNS_DOCKER_IMAGE'])
+    settings['BADDNS_MODULES'] = project.get('baddnsModules', DEFAULT_SETTINGS['BADDNS_MODULES'])
+    settings['BADDNS_NAMESERVERS'] = project.get('baddnsNameservers', DEFAULT_SETTINGS['BADDNS_NAMESERVERS'])
+    settings['BADDNS_RUN_TIMEOUT'] = project.get('baddnsRunTimeout', DEFAULT_SETTINGS['BADDNS_RUN_TIMEOUT'])
+
     # Katana Web Crawler
     settings['KATANA_ENABLED'] = project.get('katanaEnabled', DEFAULT_SETTINGS['KATANA_ENABLED'])
     settings['KATANA_DOCKER_IMAGE'] = project.get('katanaDockerImage', DEFAULT_SETTINGS['KATANA_DOCKER_IMAGE'])
@@ -1299,6 +1348,15 @@ def apply_stealth_overrides(settings: dict[str, Any]) -> dict[str, Any]:
     existing_exclude = settings.get('NUCLEI_EXCLUDE_TAGS', [])
     stealth_exclude = ['dos', 'fuzz', 'intrusive', 'sqli', 'rce']
     settings['NUCLEI_EXCLUDE_TAGS'] = list(set(existing_exclude + stealth_exclude))
+
+    # --- Subdomain Takeover: passive-only (subjack DNS, no nuclei HTTP fuzzing) ---
+    settings['NUCLEI_TAKEOVERS_ENABLED'] = False
+    settings['SUBJACK_ALL'] = False             # Don't probe non-CNAME hosts
+    settings['SUBJACK_CHECK_NS'] = True         # NS checks are safe DNS-only
+    settings['SUBJACK_CHECK_MAIL'] = True       # Mail checks are safe DNS-only
+    settings['SUBJACK_THREADS'] = 3
+    settings['TAKEOVER_RATE_LIMIT'] = 10
+    settings['BADDNS_ENABLED'] = False          # Keep isolated sidecar off in stealth
 
     # --- Hakrawler: DISABLED (active crawler, no rate-limit control) ---
     settings['HAKRAWLER_ENABLED'] = False

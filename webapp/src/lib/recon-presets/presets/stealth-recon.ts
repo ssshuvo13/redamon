@@ -176,6 +176,16 @@ Red team operators performing authorized reconnaissance against targets with act
     nucleiScanAllIps: false,
     nucleiExcludeTags: ['dos', 'fuzz', 'intrusive', 'sqli', 'rce'],
 
+    // --- Subdomain Takeover: passive DNS-only (subjack), disable active Nuclei templates ---
+    subdomainTakeoverEnabled: true,
+    subjackEnabled: true,
+    subjackAll: false,           // CNAME-identified only — avoids probing every host
+    subjackCheckNs: true,        // Pure DNS, safe
+    subjackCheckMail: true,      // Pure DNS, safe
+    subjackThreads: 3,
+    nucleiTakeoversEnabled: false, // No active HTTP fingerprint probes in stealth
+    takeoverRateLimit: 10,
+
     // --- GraphQL: we set graphqlSecurityEnabled: false below for clean preset-switch
     //     state, but note that apply_stealth_overrides (project_settings.py) FORCES
     //     GRAPHQL_SECURITY_ENABLED = True at runtime whenever stealthMode is on,

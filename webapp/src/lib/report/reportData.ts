@@ -807,7 +807,8 @@ async function queryVulnerabilities(session: any, pid: string) {
           labels(parent)[0] AS parentType,
           ep.path AS endpointPath,
           param.name AS paramName,
-          CASE WHEN ep IS NOT NULL THEN 'DAST'
+          CASE WHEN v.source = 'takeover_scan' THEN 'Subdomain Takeover'
+               WHEN ep IS NOT NULL THEN 'DAST'
                WHEN v.source = 'gvm' THEN 'GVM'
                WHEN v.source = 'nuclei' THEN 'Nuclei'
                ELSE 'Security Check' END AS findingSource

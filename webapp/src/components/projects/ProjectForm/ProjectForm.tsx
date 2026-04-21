@@ -53,6 +53,7 @@ import { RoeSection } from './sections/RoeSection'
 import { OsintEnrichmentSection } from './sections/OsintEnrichmentSection'
 import { JsReconSection } from './sections/JsReconSection'
 import { GraphqlScanSection } from './sections/GraphqlScanSection'
+import { TakeoverSection } from './sections/TakeoverSection'
 import { PartialReconModal } from './WorkflowView/PartialReconModal'
 import { ReconPresetModal } from './ReconPresetModal'
 import { SavePresetModal } from './SavePresetModal'
@@ -754,6 +755,7 @@ export function ProjectForm({
         {activeTab === 'vuln' && viewMode === 'tabs' && (
           <>
             <NucleiSection data={formData} updateField={updateField} onRun={mode === 'edit' && projectId ? () => setPartialReconToolId('Nuclei') : undefined} />
+            <TakeoverSection data={formData} updateField={updateField} onRun={mode === 'edit' && projectId ? () => setPartialReconToolId('SubdomainTakeover') : undefined} />
             <GraphqlScanSection data={formData} updateField={updateField} projectId={projectId} mode={mode} onRun={mode === 'edit' && projectId ? () => setPartialReconToolId('GraphqlScan') : undefined} />
           </>
         )}

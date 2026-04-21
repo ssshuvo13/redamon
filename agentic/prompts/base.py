@@ -1199,7 +1199,7 @@ Common properties (all sources):
 - id (string): unique identifier
 - name (string): vulnerability name
 - severity (string): "critical", "high", "medium", "low", "info" (lowercase!)
-- source (string): **"nuclei"** (DAST/web), **"gvm"** (network/OpenVAS), **"security_check"**, **"netlas"** (passive NVD-based), or **"graphql_scan"** (GraphQL security testing)
+- source (string): **"nuclei"** (DAST/web), **"gvm"** (network/OpenVAS), **"security_check"**, **"netlas"** (passive NVD-based), **"graphql_scan"** (GraphQL security testing), or **"takeover_scan"** (subdomain takeover via Subjack + Nuclei takeover templates)
 - description (string): vulnerability description
 - cvss_score (float): 0.0 to 10.0
 
@@ -1253,6 +1253,22 @@ graphql-cop properties (source="graphql_cop" -- external Docker scanner, Phase 2
 - evidence (string): JSON blob with curl_verify (reproducer cURL), raw_severity (HIGH/MEDIUM/LOW/INFO), color, graphql_cop_key
 - Same deterministic ID pattern — dedupes with graphql_scan when the same vulnerability_type fires on the same endpoint
 - Typical query: "list all graphql-cop DoS findings" → `MATCH (v:Vulnerability {source: 'graphql_cop'}) WHERE v.vulnerability_type IN ['graphql_alias_overloading', 'graphql_batch_query_allowed', 'graphql_directive_overloading', 'graphql_circular_introspection'] RETURN v.vulnerability_type, v.severity, v.endpoint`
+
+Subdomain-takeover properties (source="takeover_scan"):
+- type (string): always "subdomain_takeover"
+- hostname (string): the subdomain flagged (e.g. "promo.acme.com")
+- cname_target (string, nullable): CNAME destination for cname-method findings (e.g. "acme-spring.herokuapp.com")
+- takeover_provider (string): canonical provider slug — "github-pages", "heroku", "aws-s3", "fastly", "azure-app-service", "shopify", "ghost", "zendesk", "readthedocs", "netlify", "vercel", etc., or "unknown"
+- takeover_method (string): "cname" | "dns" | "ns" | "mx" | "stale_a"
+- confidence (integer): 0..100 score from the layered scanner
+- sources (string[]): tools that confirmed the finding — subset of ["subjack", "nuclei_takeover"]
+- confirmation_count (integer): length of sources
+- verdict (string): "confirmed" (>=threshold+10), "likely" (>=threshold), or "manual_review" (below threshold). Manual-review findings are emitted with severity="info" unless the project opts into auto-publish.
+- evidence (string): short human-readable excerpt of the match (subjack service name or nuclei template/matcher)
+- tool_raw (string): JSON-encoded raw per-tool output (truncated to 50KB)
+- first_seen / last_seen (strings): ISO timestamps
+- id pattern: `takeover_<sha1-hex16>` where the hash is over `hostname+takeover_provider+takeover_method` — deterministic, MERGE-safe across re-scans
+- Typical query: "list confirmed Heroku takeovers" → `MATCH (s:Subdomain)-[:HAS_VULNERABILITY]->(v:Vulnerability {source: 'takeover_scan'}) WHERE v.takeover_provider = 'heroku' AND v.verdict = 'confirmed' RETURN s.name AS subdomain, v.cname_target, v.confidence, v.sources`
 
 **CVE** - Known CVE entries (linked to Technologies)
 - id (string): "CVE-2021-41773", "CVE-2021-44228"

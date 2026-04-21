@@ -302,6 +302,29 @@ export const reconPresetSchema = z.object({
   nucleiScanAllIps: bool,
   nucleiInteractsh: bool,
 
+  // -- Subdomain Takeover --
+  subdomainTakeoverEnabled: bool,
+  subjackEnabled: bool,
+  subjackThreads: int,
+  subjackTimeout: int,
+  subjackSsl: bool,
+  subjackAll: bool,
+  subjackCheckNs: bool,
+  subjackCheckAr: bool,
+  subjackCheckMail: bool,
+  subjackRunTimeout: int,
+  nucleiTakeoversEnabled: bool,
+  nucleiTakeoverRunTimeout: int,
+  takeoverSeverity: strArr,
+  takeoverConfidenceThreshold: int,
+  takeoverRateLimit: int,
+  takeoverManualReviewAutoPublish: bool,
+  baddnsEnabled: bool,
+  baddnsDockerImage: str,
+  baddnsModules: strArr,
+  baddnsNameservers: strArr,
+  baddnsRunTimeout: int,
+
   // -- CVE Lookup --
   cveLookupEnabled: bool,
   cveLookupSource: str,
@@ -676,6 +699,29 @@ export const RECON_PARAMETER_CATALOG = `
 - nucleiMaxRedirects: integer
 - nucleiScanAllIps: boolean
 - nucleiInteractsh: boolean - Out-of-band interaction detection
+
+## Subdomain Takeover (Subjack + Nuclei takeover templates)
+- subdomainTakeoverEnabled: boolean - Master switch for the layered takeover scanner (default false)
+- subjackEnabled: boolean - Run Subjack (DNS-first, Apache-2.0 Go binary). Default true.
+- subjackThreads: integer - Subjack concurrent threads (default 10)
+- subjackTimeout: integer - Subjack per-request timeout in seconds (default 30)
+- subjackSsl: boolean - Force HTTPS probing for higher accuracy (default true)
+- subjackAll: boolean - Test every URL, not just identified CNAMEs — slower (default false)
+- subjackCheckNs: boolean - Detect NS takeovers (expired nameservers / dangling cloud DNS delegations)
+- subjackCheckAr: boolean - Detect stale A records pointing to dead cloud IPs (manual review)
+- subjackCheckMail: boolean - Check SPF include + MX takeovers
+- subjackRunTimeout: integer - Hard wall clock for a full subjack run in seconds (default 900)
+- nucleiTakeoversEnabled: boolean - Run Nuclei with -t http/takeovers/ -t dns/ against alive URLs (default true)
+- nucleiTakeoverRunTimeout: integer - Hard wall clock for the takeover-only nuclei pass in seconds (default 1800)
+- takeoverSeverity: string[] - Severity filter for Nuclei takeover templates (e.g. ["critical","high","medium"])
+- takeoverConfidenceThreshold: integer - 0..100. Findings >= threshold+10 are confirmed, >= threshold are likely, otherwise manual_review
+- takeoverRateLimit: integer - Nuclei requests/second for the takeover pass (default 50)
+- takeoverManualReviewAutoPublish: boolean - Publish manual_review findings into the main Vulnerability stream (default false)
+- baddnsEnabled: boolean - Run the BadDNS sidecar (AGPL-3.0, isolated Docker container). Requires "docker compose --profile tools build baddns-scanner". Default false.
+- baddnsDockerImage: string - BadDNS image name. Default "redamon-baddns:latest" (built locally from baddns_scan/Dockerfile)
+- baddnsModules: string[] - Subset of BadDNS modules to run. Valid: cname, ns, mx, txt, spf, dmarc, wildcard, nsec, references, zonetransfer. (MTA-STS exists in baddns 2.1.0 but is not CLI-addressable due to an upstream validator regex bug -- omit.) Default: ["cname","ns","mx","txt","spf"]
+- baddnsNameservers: string[] - Optional custom DNS resolvers (e.g. ["1.1.1.1","8.8.8.8"]). Empty = system resolvers.
+- baddnsRunTimeout: integer - Hard wall clock for the BadDNS pass in seconds. Default 1800.
 
 ## CVE Lookup
 - cveLookupEnabled: boolean

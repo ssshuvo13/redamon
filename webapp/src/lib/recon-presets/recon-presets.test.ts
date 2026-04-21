@@ -2197,14 +2197,47 @@ describe('Subdomain Takeover Hunter preset', () => {
     expect(p.httpxFollowRedirects).toBe(true)
   })
 
-  test('nuclei enabled with takeover tags', () => {
+  test('full Nuclei scanner disabled (dedicated takeover module covers it)', () => {
     const p = SUBDOMAIN_TAKEOVER.parameters
-    expect(p.nucleiEnabled).toBe(true)
-    expect(p.nucleiTags).toEqual(['takeover'])
-    expect(p.nucleiSeverity).toEqual(['critical', 'high', 'medium'])
-    expect(p.nucleiDastMode).toBe(false)
-    expect(p.nucleiHeadless).toBe(false)
-    expect(p.nucleiInteractsh).toBe(false)
+    expect(p.nucleiEnabled).toBe(false)
+  })
+
+  test('dedicated takeover module enabled with every subjack check', () => {
+    const p = SUBDOMAIN_TAKEOVER.parameters
+    expect(p.subdomainTakeoverEnabled).toBe(true)
+    expect(p.subjackEnabled).toBe(true)
+    expect(p.subjackSsl).toBe(true)
+    expect(p.subjackAll).toBe(true)
+    expect(p.subjackCheckNs).toBe(true)
+    expect(p.subjackCheckAr).toBe(true)
+    expect(p.subjackCheckMail).toBe(true)
+    expect(p.subjackThreads).toBe(20)
+    expect(p.nucleiTakeoversEnabled).toBe(true)
+  })
+
+  test('takeover scoring is aggressive (threshold 40, severity full range, auto-publish on)', () => {
+    const p = SUBDOMAIN_TAKEOVER.parameters
+    expect(p.takeoverConfidenceThreshold).toBe(40)
+    expect(p.takeoverSeverity).toEqual(['critical', 'high', 'medium', 'low'])
+    expect(p.takeoverManualReviewAutoPublish).toBe(true)
+    expect(p.takeoverRateLimit).toBe(100)
+  })
+
+  test('GAU historical URL mining enabled for additional subdomain discovery', () => {
+    const p = SUBDOMAIN_TAKEOVER.parameters
+    expect(p.gauEnabled).toBe(true)
+    expect(p.gauProviders).toEqual(['wayback', 'commoncrawl', 'otx', 'urlscan'])
+  })
+
+  test('roundtrips through Zod schema without losing keys', async () => {
+    const { reconPresetSchema } = await import('../recon-preset-schema')
+    const result = reconPresetSchema.safeParse(SUBDOMAIN_TAKEOVER.parameters)
+    expect(result.success).toBe(true)
+    expect(result.data!.subdomainTakeoverEnabled).toBe(true)
+    expect(result.data!.subjackCheckAr).toBe(true)
+    expect(result.data!.takeoverConfidenceThreshold).toBe(40)
+    expect(result.data!.takeoverManualReviewAutoPublish).toBe(true)
+    expect(result.data!.gauEnabled).toBe(true)
   })
 
   test('port scanners disabled', () => {
@@ -2265,7 +2298,7 @@ describe('Subdomain Takeover Hunter preset', () => {
     expect(SUBDOMAIN_TAKEOVER.fullDescription).toContain('### Who is this for?')
     expect(SUBDOMAIN_TAKEOVER.fullDescription).toContain('### What it enables')
     expect(SUBDOMAIN_TAKEOVER.fullDescription).toContain('### What it disables')
-    expect(SUBDOMAIN_TAKEOVER.fullDescription).toContain('### How it works')
+    expect(SUBDOMAIN_TAKEOVER.fullDescription).toContain('### How the layered scanner works')
   })
 })
 
@@ -3763,7 +3796,7 @@ describe('GraphQL Recon preset', () => {
     expect(uniqueIds.size).toBe(ids.length)
   })
 
-  test('is exactly the 22nd preset (added to registry)', () => {
+  test('is included in the registry (current count: 22)', () => {
     expect(RECON_PRESETS.length).toBe(22)
   })
 })

@@ -20,6 +20,15 @@ RUN printf '#!/bin/sh\nmax=5; n=0; until "$@"; do n=$((n+1)); [ $n -ge $max ] &&
     > /usr/local/bin/retry && chmod +x /usr/local/bin/retry
 RUN CGO_ENABLED=0 retry go install github.com/ffuf/ffuf/v2@latest
 
+# Stage 1d: Build subjack binary (pure Go, DNS takeover scanner)
+# Source: https://github.com/haccer/subjack (Apache-2.0)
+# Recent subjack tip requires Go >= 1.25, so we use a matching builder.
+# Fingerprints are compiled into the binary — no runtime data file required.
+FROM golang:1.25-alpine AS subjack-builder
+RUN printf '#!/bin/sh\nmax=5; n=0; until "$@"; do n=$((n+1)); [ $n -ge $max ] && exit 1; echo "Retry $n/$max ..."; sleep $((n*5)); done\n' \
+    > /usr/local/bin/retry && chmod +x /usr/local/bin/retry
+RUN CGO_ENABLED=0 retry go install github.com/haccer/subjack@latest
+
 # Stage 1c: Build masscan from source (C project, requires libpcap)
 FROM debian:bookworm-slim AS masscan-builder
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -135,6 +144,7 @@ RUN pip install --no-cache-dir --upgrade pip && \
 # Copy Go binaries from build stages
 COPY --from=jsluice-builder /go/bin/jsluice /usr/local/bin/jsluice
 COPY --from=ffuf-builder /go/bin/ffuf /usr/local/bin/ffuf
+COPY --from=subjack-builder /go/bin/subjack /usr/local/bin/subjack
 
 # Install SecLists wordlists for FFuf directory fuzzing
 RUN mkdir -p /usr/share/seclists/Discovery/Web-Content && \

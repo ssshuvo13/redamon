@@ -61,6 +61,7 @@ from recon.partial_recon_modules.graphql_scanning import run_graphqlscan
 from recon.partial_recon_modules.vulnerability_scanning import (
     run_nuclei,
     run_security_checks_partial,
+    run_subdomain_takeover_partial,
 )
 from recon.partial_recon_modules.osint_enrichment import (
     run_shodan,
@@ -124,6 +125,8 @@ def main():
         run_graphqlscan(config)
     elif tool_id == "Nuclei":
         run_nuclei(config)
+    elif tool_id == "SubdomainTakeover":
+        run_subdomain_takeover_partial(config)
     elif tool_id == "SecurityChecks":
         run_security_checks_partial(config)
     elif tool_id == "Shodan":

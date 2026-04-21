@@ -1369,6 +1369,9 @@ def run_domain_recon(target: str, anonymous: bool = False, bruteforce: bool = Fa
         if _settings.get('GRAPHQL_SECURITY_ENABLED', False):
             from recon.graphql_scan import run_graphql_scan_isolated
             phase_a_tools['graphql_scan'] = run_graphql_scan_isolated
+        if _settings.get('SUBDOMAIN_TAKEOVER_ENABLED', False):
+            from recon.main_recon_modules.subdomain_takeover import run_subdomain_takeover_isolated
+            phase_a_tools['subdomain_takeover'] = run_subdomain_takeover_isolated
 
         if phase_a_tools:
             print(f"\n[*][Pipeline] GROUP 6 Phase A: Active Vulnerability Scanning (fan-out: {', '.join(phase_a_tools.keys())})")

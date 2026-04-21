@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, type CSSProperties } from 'react'
 import { ChevronDown, ShieldAlert, Play } from 'lucide-react'
 import { Toggle } from '@/components/ui'
 import type { Project } from '@prisma/client'
@@ -13,6 +13,14 @@ interface TakeoverSectionProps {
   data: FormData
   updateField: <K extends keyof FormData>(field: K, value: FormData[K]) => void
   onRun?: () => void
+}
+
+// Inline code-snippet style — keeps monospace snippets smaller than surrounding text
+const codeStyle: CSSProperties = {
+  fontSize: '0.85em',
+  padding: '1px 4px',
+  backgroundColor: 'rgba(255,255,255,0.06)',
+  borderRadius: '3px',
 }
 
 const SEVERITY_OPTIONS = ['critical', 'high', 'medium', 'low', 'info']
@@ -110,9 +118,9 @@ export function TakeoverSection({ data, updateField, onRun }: TakeoverSectionPro
           <p className={styles.sectionDescription}>
             Layered subdomain takeover detection. <strong>Subjack</strong> (DNS-first, high precision)
             validates candidates by resolving CNAME/NS/MX records; <strong>Nuclei takeover templates</strong>
-            (<code>http/takeovers/</code> + <code>dns/</code>) add HTTP fingerprint coverage against alive URLs.
-            Findings are deduplicated across tools, scored, and written as <code>Vulnerability</code> nodes
-            with <code>source=&quot;takeover_scan&quot;</code>.
+            (<code style={codeStyle}>http/takeovers/</code> + <code style={codeStyle}>dns/</code>) add HTTP fingerprint coverage against alive URLs.
+            Findings are deduplicated across tools, scored, and written as <code style={codeStyle}>Vulnerability</code> nodes
+            with <code style={codeStyle}>source=&quot;takeover_scan&quot;</code>.
           </p>
 
           {data.subdomainTakeoverEnabled && (
@@ -138,7 +146,7 @@ export function TakeoverSection({ data, updateField, onRun }: TakeoverSectionPro
                   <div>
                     <div className={styles.toggleLabel}>Nuclei takeover templates</div>
                     <div className={styles.toggleDescription}>
-                      Runs <code>-t http/takeovers/ -t dns/</code> against alive URLs from httpx. Reuses the existing Nuclei Docker image.
+                      Runs <code style={codeStyle}>-t http/takeovers/ -t dns/</code> against alive URLs from httpx. Reuses the existing Nuclei Docker image.
                     </div>
                   </div>
                   <Toggle
@@ -149,13 +157,9 @@ export function TakeoverSection({ data, updateField, onRun }: TakeoverSectionPro
 
                 <div className={styles.toggleRow}>
                   <div>
-                    <div className={styles.toggleLabel}>
-                      BadDNS <span style={{ color: '#a0aec0', fontSize: '11px' }}>(AGPL-3.0 isolated sidecar)</span>
-                    </div>
+                    <div className={styles.toggleLabel}>BadDNS</div>
                     <div className={styles.toggleDescription}>
-                      Deep DNS analysis across CNAME / NS / MX / TXT / SPF / DMARC / wildcard / NSEC / zone-transfer modules. Runs in its own Docker image
-                      (<code>redamon-baddns:latest</code>) and is invoked via Docker-in-Docker. Build with{' '}
-                      <code>docker compose --profile tools build baddns-scanner</code>.
+                      Deep DNS analysis across CNAME / NS / MX / TXT / SPF / DMARC / wildcard / NSEC / zone-transfer modules. Runs in its own isolated Docker image (<code style={codeStyle}>redamon-baddns:latest</code>). Build once with <code style={codeStyle}>docker compose --profile tools build baddns-scanner</code>.
                     </div>
                   </div>
                   <Toggle
@@ -201,7 +205,7 @@ export function TakeoverSection({ data, updateField, onRun }: TakeoverSectionPro
                     })}
                   </div>
                   <div className={styles.fieldHint}>
-                    Module list is passed to <code>baddns -m</code>. Hover each for its purpose. Heavy modules like <code>nsec</code> and <code>zonetransfer</code> can be slow on large targets.
+                    Module list is passed to <code style={codeStyle}>baddns -m</code>. Hover each for its purpose. Heavy modules like <code style={codeStyle}>nsec</code> and <code style={codeStyle}>zonetransfer</code> can be slow on large targets.
                   </div>
                 </div>
               )}
@@ -302,35 +306,38 @@ export function TakeoverSection({ data, updateField, onRun }: TakeoverSectionPro
                 </div>
               </div>
 
-              <div className={styles.fieldGroup}>
-                <label className={styles.fieldLabel}>Nuclei rate limit (req/s)</label>
-                <input
-                  type="number"
-                  min={1}
-                  max={500}
-                  value={data.takeoverRateLimit ?? 50}
-                  onChange={(e) => updateField('takeoverRateLimit', parseInt(e.target.value, 10) || 50)}
-                  className={styles.fieldInput}
-                />
-              </div>
-
-              <div className={styles.fieldGroup}>
-                <label className={styles.fieldLabel}>Subjack threads</label>
-                <input
-                  type="number"
-                  min={1}
-                  max={100}
-                  value={data.subjackThreads ?? 10}
-                  onChange={(e) => updateField('subjackThreads', parseInt(e.target.value, 10) || 10)}
-                  className={styles.fieldInput}
-                />
+              <div className={styles.fieldRow}>
+                <div className={styles.fieldGroup}>
+                  <label className={styles.fieldLabel}>Nuclei rate limit (req/s)</label>
+                  <input
+                    type="number"
+                    className="textInput"
+                    value={data.takeoverRateLimit ?? 50}
+                    onChange={(e) => updateField('takeoverRateLimit', parseInt(e.target.value, 10) || 50)}
+                    min={1}
+                    max={500}
+                  />
+                  <span className={styles.fieldHint}>Cap for Nuclei takeover pass. Actual peak can burst ~15% above (token-bucket).</span>
+                </div>
+                <div className={styles.fieldGroup}>
+                  <label className={styles.fieldLabel}>Subjack threads</label>
+                  <input
+                    type="number"
+                    className="textInput"
+                    value={data.subjackThreads ?? 10}
+                    onChange={(e) => updateField('subjackThreads', parseInt(e.target.value, 10) || 10)}
+                    min={1}
+                    max={100}
+                  />
+                  <span className={styles.fieldHint}>Parallel DNS probes. Safe to raise — no target-facing HTTP load.</span>
+                </div>
               </div>
 
               <div className={styles.toggleRow}>
                 <div>
                   <div className={styles.toggleLabel}>Auto-publish manual-review findings</div>
                   <div className={styles.toggleDescription}>
-                    Publish <code>manual_review</code> findings to the main findings table (default: kept in a separate review queue with <code>severity=&quot;info&quot;</code>).
+                    Publish <code style={codeStyle}>manual_review</code> findings to the main findings table (default: kept in a separate review queue with <code style={codeStyle}>severity=&quot;info&quot;</code>).
                   </div>
                 </div>
                 <Toggle
